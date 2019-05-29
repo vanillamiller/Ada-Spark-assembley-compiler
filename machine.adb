@@ -166,6 +166,8 @@ package body Machine with SPARK_Mode => On is
       subtype InstrCount is Integer range 1..MEMORY_SIZE;
       Count : InstrCount := InstrCount'First;
       Inst : Instr;
+      RegTracker : array (Reg) of DataVal := (others => 0);
+      MemTracker : array (Addr) of DataVal := (others => 0);
       
    begin
       
@@ -182,8 +184,9 @@ package body Machine with SPARK_Mode => On is
                then
                   return True;   
                end if;
+               RegTracker(Inst.MovRd) := DataVal(Inst.MovOffs);
                Count := Count + 1;
-
+               
             -- Makes sure counter does not drop below 1 or jump past line limit 
             -- limit
             when JMP =>
@@ -202,7 +205,8 @@ package body Machine with SPARK_Mode => On is
                if Integer(Inst.JzOffs) + Count > Cycles or 
                  Integer(Inst.JzOffs) + Count < 1 or 
                  Integer(Inst.JzOffs) <= -(MEMORY_SIZE) or 
-                 Integer(Inst.JzOffs) >= MEMORY_SIZE
+                 Integer(Inst.JzOffs) >= MEMORY_SIZE or
+                 RegTracker(Inst.JzRa) = 0
                then
                   return True; 
                end if;
@@ -216,55 +220,98 @@ package body Machine with SPARK_Mode => On is
             -- makes sure that the sum of two valid values does not overflow
             -- or underflow
             when ADD =>
-               if Regs(Inst.AddRs1) + Regs(Inst.AddRs2) > DataVal'Last or
-                 Regs(Inst.AddRs1) + Regs(Inst.AddRs1) < DataVal'First
+               if 
+                 -- A value in the register is unknown or ...
+                 RegTracker(Inst.AddRs1) = 0 or RegTracker(Inst.AddRs2) = 0 or
+                 -- both register values are known and their sum is 
+                 -- outside of legal data values
+                 RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) > DataVal'Last
+                 or RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) 
+                 < DataVal'First
                then
                   return True;
                end if;
+               RegTracker(Inst.AddRd) := RegTracker(Inst.AddRs1) 
+                 + RegTracker(Inst.AddRs2);
                Count := Count + 1;
             
             -- makes sure the product of two valid values does not overflow 
             -- or underflow
             when MUL =>
-               if Regs(Inst.MulRs1) * Regs(Inst.MulRs2) > DataVal'Last or
-                 Regs(Inst.MulRs1) * Regs(Inst.MulRs1) < DataVal'First 
+               
+               if 
+                 -- A value in the register is unknown or ...
+                 RegTracker(Inst.MulRs1) = 0  or RegTracker(Inst.MulRs2) = 0 or
+                 -- both register values are known and their product is 
+                 -- outside of legal data values
+                 RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs1) < DataVal'First 
+                 or RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs1) 
+                 > DataVal'Last   
                then
                   return True;
                end if;
+               RegTracker(Inst.MulRd) := RegTracker(Inst.MulRs1) 
+                 * RegTracker(Inst.MulRs2);
                Count := Count + 1;
             
-            -- Mitigates divide by zero
+           
             when DIV =>
+                -- The denominator is unknown and thus could be 0
                if Integer(Regs(Inst.DivRs2)) = 0 
                then
                   return True;
                end if;
+               RegTracker(Inst.DivRd) := RegTracker(Inst.DivRs1) / 
+                 RegTracker(Inst.DivRs2);
                Count := Count + 1;
             
             -- makes sure that the difference of two valid values does not
             -- overflow nor underflow
             when SUB =>
-               if Regs(Inst.SubRs1) - Regs(Inst.SubRs2) > DataVal'Last or
-                 Regs(Inst.SubRs1) - Regs(Inst.SubRs2) < DataVal'First 
+               if 
+                 -- both register values are known and their subtraction is 
+                 -- outside of legal data values or ...
+                 RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) 
+                 > DataVal'Last or Regs(Inst.SubRs1) - Regs(Inst.SubRs2)
+                 < DataVal'First or 
+                 -- a value in the register is unknown
+                 RegTracker(Inst.SubRs1) = 0 or RegTracker(Inst.SubRs2) = 0
                then
                   return True;
                end if;
+               RegTracker(Inst.SubRd) := RegTracker(Inst.SubRs1) 
+                 - RegTracker(Inst.SubRs2);
                Count := Count + 1;
             
             -- Checks that loading address is a valid
             when LDR =>
-               if Integer(DataVal(Inst.LdrOffs) + Regs(Inst.LdrRs))  > Integer(Addr'Last) or
-                 Integer(DataVal(Inst.LdrOffs) + Regs(Inst.LdrRs)) < Integer(Addr'First) or
-                 Inst.LdrOffs > Offset'Last or Inst.LdrOffs < Offset'First
+               if 
+                 -- The register value is known and the sum of the value and
+                 -- the offset are outside of legal addresses or ...
+                 Integer(DataVal(Inst.LdrOffs) + RegTracker(Inst.LdrRs))  
+                 > Integer(Addr'Last) or
+                 Integer(DataVal(Inst.LdrOffs) + RegTracker(Inst.LdrRs)) 
+                   < Integer(Addr'First) or
+                 Inst.LdrOffs > Offset'Last or Inst.LdrOffs < Offset'First or 
+                 -- The register value is unknown
+                 RegTracker(Inst.LdrRs) = 0
                then
                   return True;
                end if;
                Count := Count + 1;
                 
-            -- Checks that storing address is valid
+            
             when STR => 
-                if Integer(DataVal(Inst.StrOffs) + Regs(Inst.StrRa)) > Integer(Addr'Last) or
-                 Integer(DataVal(Inst.StrOffs) + Regs(Inst.StrRa)) < Integer(Addr'First)
+               if 
+                 -- The register value is known and the sum of the value and
+                 -- the offset are outside of legal addresses or ...
+                 Integer(DataVal(Inst.StrOffs) + RegTracker(Inst.StrRa)) 
+                 > Integer(Addr'Last) or
+                 Integer(DataVal(Inst.StrOffs) + RegTracker(Inst.StrRa)) 
+                   < Integer(Addr'First) or
+                 Inst.StrOffs > Offset'Last or Inst.StrOffs < Offset'First or
+                 -- The register value is unknown
+                 RegTracker(Inst.StrRa) = 0
                then
                   return True;
                end if;
