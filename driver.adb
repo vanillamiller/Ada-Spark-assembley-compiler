@@ -33,9 +33,15 @@ begin
    ExecuteProgram(Prog,MAX_PROGRAM_LENGTH,Code,Result);
    Put("Return Code: ");
    Put(Code'Image);
-   --if Code = Success then
+   if Code = Success then
       Put(" Result: "); Put(Result);
-   --end if;
+   end if;
    New_Line;   
-
+   
+exception
+   
+   when others => 
+      Code := IllegalProgram;
+      Put("Return Code: "); Put(Code'Image);
+      
 end Driver;

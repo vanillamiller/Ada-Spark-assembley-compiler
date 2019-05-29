@@ -177,10 +177,10 @@ package body Machine with SPARK_Mode => On is
          
          case inst.Op is
             
-            
             when MOV =>
-               -- Makes sure no invalid values are entered into a register 
-               if Inst.MovOffs > Offset'Last or 
+               if 
+                 -- Makes sure no invalid values are entered into a register 
+                 Inst.MovOffs > Offset'Last or 
                  Inst.MovOffs < Offset'First
                then
                   return True;   
@@ -242,8 +242,7 @@ package body Machine with SPARK_Mode => On is
             
             -- makes sure the product of two valid values does not overflow 
             -- or underflow
-            when MUL =>
-               
+            when MUL =>  
                if 
                  -- A value in the register is unknown or ...
                  RegTracker(Inst.MulRs1) = 0  or RegTracker(Inst.MulRs2) = 0 or
