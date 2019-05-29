@@ -195,8 +195,8 @@ package body Machine with SPARK_Mode => On is
                  Integer(Inst.JmpOffs) + Count > Cycles or 
                  Integer(Inst.JmpOffs) + Count < 1 or 
                  -- An invalid offset is entered
-                 Inst.JmpOffs < Offet'First or 
-                 Inst.JmpOffs > Offset'Last or
+                 Inst.JmpOffs < Offset'First or 
+                 Inst.JmpOffs > Offset'Last
                then
                   return True;
                end if;
@@ -209,7 +209,7 @@ package body Machine with SPARK_Mode => On is
                  Integer(Inst.JzOffs) + Count > Cycles or 
                  Integer(Inst.JzOffs) + Count < 1 or 
                  -- An invalid offset is entered
-                 Inst.JzOffs < Offet'First or 
+                 Inst.JzOffs < Offset'First or 
                  Inst.JzOffs > Offset'Last or
                  -- The register value is unknown
                  RegTracker(Inst.JzRa) = 0
