@@ -1,7 +1,7 @@
 with Instruction; use Instruction;
 
 -- specification of the VM implementation
-package Machine with SPARK_Mode is 
+package Machine with SPARK_Mode => On is 
    
    -- the VM returns either 
    -- Success: when the program executes successfully and returns a value

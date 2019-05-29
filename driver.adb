@@ -4,7 +4,7 @@ with Machine;
 use Machine;
 with Debug; use Debug;
 
-procedure Driver with SPARK_Mode is
+procedure Driver with SPARK_Mode => Off is
    Prog : Program := (others => (Op => NOP));
    Code : ReturnCode;
    Result : Integer;
