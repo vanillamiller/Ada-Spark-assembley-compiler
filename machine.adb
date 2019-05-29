@@ -167,7 +167,7 @@ package body Machine with SPARK_Mode => On is
       Count : InstrCount := InstrCount'First;
       Inst : Instr;
       RegTracker : array (Reg) of DataVal := (others => 0);
-      MemTracker : array (Addr) of DataVal := (others => 0);
+      -- MemTracker : array (Addr) of DataVal := (others => 0);
       
    begin
       
@@ -177,35 +177,41 @@ package body Machine with SPARK_Mode => On is
          
          case inst.Op is
             
-            -- Makes sure no invalid values are entered into a register 
+            
             when MOV =>
-               if Integer(Inst.MovOffs) >= MEMORY_SIZE or 
-                 Integer(Inst.MovOffs) <= -(MEMORY_SIZE) 
+               -- Makes sure no invalid values are entered into a register 
+               if Inst.MovOffs > Offset'Last or 
+                 Inst.MovOffs < Offset'First
                then
                   return True;   
                end if;
                RegTracker(Inst.MovRd) := DataVal(Inst.MovOffs);
                Count := Count + 1;
                
-            -- Makes sure counter does not drop below 1 or jump past line limit 
-            -- limit
+            
             when JMP =>
-               if Integer(Inst.JmpOffs) + Count > Cycles or 
+               if
+                 -- Jumps outside of the line limit or below 1
+                 Integer(Inst.JmpOffs) + Count > Cycles or 
                  Integer(Inst.JmpOffs) + Count < 1 or 
-                 Integer(Inst.JmpOffs) <= -(MEMORY_SIZE) or 
-                 Integer(Inst.JmpOffs) >= MEMORY_SIZE
+                 -- An invalid offset is entered
+                 Inst.JmpOffs < Offet'First or 
+                 Inst.JmpOffs > Offset'Last or
                then
                   return True;
                end if;
                Count := Count + Integer(Inst.JmpOffs);
             
-            -- Makes sure counter does not drop below 1 or jump past line limit
-            -- limit
+
             when JZ =>
-               if Integer(Inst.JzOffs) + Count > Cycles or 
+               if 
+                 -- Jumps outside of the line limit or below 1
+                 Integer(Inst.JzOffs) + Count > Cycles or 
                  Integer(Inst.JzOffs) + Count < 1 or 
-                 Integer(Inst.JzOffs) <= -(MEMORY_SIZE) or 
-                 Integer(Inst.JzOffs) >= MEMORY_SIZE or
+                 -- An invalid offset is entered
+                 Inst.JzOffs < Offet'First or 
+                 Inst.JzOffs > Offset'Last or
+                 -- The register value is unknown
                  RegTracker(Inst.JzRa) = 0
                then
                   return True; 
@@ -217,8 +223,7 @@ package body Machine with SPARK_Mode => On is
             when RET =>
                return False;
                
-            -- makes sure that the sum of two valid values does not overflow
-            -- or underflow
+            
             when ADD =>
                if 
                  -- A value in the register is unknown or ...
@@ -283,7 +288,6 @@ package body Machine with SPARK_Mode => On is
                  - RegTracker(Inst.SubRs2);
                Count := Count + 1;
             
-            -- Checks that loading address is a valid
             when LDR =>
                if 
                  -- The register value is known and the sum of the value and
@@ -291,7 +295,7 @@ package body Machine with SPARK_Mode => On is
                  Integer(DataVal(Inst.LdrOffs) + RegTracker(Inst.LdrRs))  
                  > Integer(Addr'Last) or
                  Integer(DataVal(Inst.LdrOffs) + RegTracker(Inst.LdrRs)) 
-                   < Integer(Addr'First) or
+                 < Integer(Addr'First) or
                  Inst.LdrOffs > Offset'Last or Inst.LdrOffs < Offset'First or 
                  -- The register value is unknown
                  RegTracker(Inst.LdrRs) = 0
@@ -323,7 +327,7 @@ package body Machine with SPARK_Mode => On is
          
             end case;
               
-         
+       
       end loop;
       return True;
    end DetectInvalidBehaviour;
