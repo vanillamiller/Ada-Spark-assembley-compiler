@@ -152,22 +152,23 @@ package body Machine with SPARK_Mode => On is
          Ret := CyclesExhausted;
       end if;
       
-   
    end ExecuteProgram;
    
    -- A static analysis that goes throught the generated assembley instructions
-   -- line by line and checks the legality of offsets, addresses, data 
-   -- in registers and divide by zero
+   -- line by line and if a value has been placed in a register, if a offset is
+   -- legal and that known register value instructions do not cause over/under
+   -- flow
    function DetectInvalidBehaviour(Prog : in Program;
                                    Cycles : in Integer) return Boolean is
       
       -- Integer subtype in the range of ProgramCounter for easy incrementation,
-      -- comparison and indexing Prog
+      -- comparison and indexing Program instructions 
       subtype InstrCount is Integer range 1..MEMORY_SIZE;
       Count : InstrCount := InstrCount'First;
       Inst : Instr;
+      
+      -- Array that tracks values MOV'ed into registers
       RegTracker : array (Reg) of DataVal := (others => 0);
-      -- MemTracker : array (Addr) of DataVal := (others => 0);
       
    begin
       
