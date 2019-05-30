@@ -165,10 +165,16 @@ package body Machine with SPARK_Mode => On is
       -- comparison and indexing Program instructions 
       subtype InstrCount is Integer range 1..MEMORY_SIZE;
       Count : InstrCount := InstrCount'First;
+      
       Inst : Instr;
       
-      -- Array that tracks values MOV'ed into registers
+      -- Array that tracks values MOV'ed into registers adn the manipulation
+      -- on these known register values.
+      -- It assumes both worst cases where increment or decrement by 1 would
+      -- cause overflow and decrement by 1 would cause underflow
       RegTracker : array (Reg) of DataVal := (others => 0);
+      
+      RegKnown : array (Reg) of Boolean := (others => False);
       
    begin
       
@@ -187,6 +193,7 @@ package body Machine with SPARK_Mode => On is
                   return True;   
                end if;
                RegTracker(Inst.MovRd) := DataVal(Inst.MovOffs);
+               RegKnown(Inst.MovRd) := True;
                Count := Count + 1;
                
             
@@ -224,68 +231,92 @@ package body Machine with SPARK_Mode => On is
             when RET =>
                return False;
                
-            
             when ADD =>
-               if 
-                 -- A value in the register is unknown or ...
-                 RegTracker(Inst.AddRs1) = 0 or RegTracker(Inst.AddRs2) = 0 or
-                 -- both register values are known and their sum is 
-                 -- outside of legal data values
-                 RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) > DataVal'Last
-                 or RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) 
-                 < DataVal'First
+               if not
+                 -- Reject if a register is unknown, or 2 known registers lead to 
+                 -- overflow or ...
+                 (RegKnown(Inst.AddRs1) and RegKnown(Inst.AddRs2) 
+                 and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) <= DataVal'Last)
+                 and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) >= DataVal'First))
+                 -- if a register is unknown while the other register known to be non 0
+                 or ((RegKnown(Inst.AddRs1) and not(RegKnown(Inst.AddRs2)) and 
+                        RegTracker(Inst.AddRs1) = 0) or
+                    (RegKnown(Inst.AddRs2) and not(RegKnown(Inst.AddRs1)) and 
+                        RegTracker(Inst.AddRs2) = 0)
+                 )
                then
                   return True;
                end if;
                RegTracker(Inst.AddRd) := RegTracker(Inst.AddRs1) 
                  + RegTracker(Inst.AddRs2);
+               RegKnown(Inst.AddRd) := True;
                Count := Count + 1;
             
             -- makes sure the product of two valid values does not overflow 
             -- or underflow
             when MUL =>  
-               if 
+               if not
                  -- A value in the register is unknown or ...
-                 RegTracker(Inst.MulRs1) = 0  or RegTracker(Inst.MulRs2) = 0 or
+                 -- RegTracker(Inst.MulRs1) = 0  or RegTracker(Inst.MulRs2) = 0 or
                  -- both register values are known and their product is 
                  -- outside of legal data values
-                 RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs1) < DataVal'First 
-                 or RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs1) 
-                 > DataVal'Last   
+                 --(RegTrackerMax(Inst.MulRs1) * RegTrackerMax(Inst.MulRs2) > DataVal'Last)
+                 --and RegTrackerMin(Inst.MulRs1) * RegTrackerMin(Inst.MulRs2) 
+                 --< DataVal'First)
+                 -- Reject if a register is unknown, or 2 known registers lead to 
+                 -- overflow or ...
+                 (RegKnown(Inst.MulRs1) and RegKnown(Inst.MulRs2) 
+                 and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) <= DataVal'Last)
+                 and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) >= DataVal'First))
+                 -- if a register is unknown while the other register known to be non 0
+                 or ((RegKnown(Inst.MulRs1) and not(RegKnown(Inst.MulRs2)) and 
+                        RegTracker(Inst.MulRs1) = 0) or
+                    (RegKnown(Inst.MulRs2) and not(RegKnown(Inst.MulRs1)) and 
+                        RegTracker(Inst.MulRs2) = 0)
+                 )
                then
                   return True;
                end if;
                RegTracker(Inst.MulRd) := RegTracker(Inst.MulRs1) 
                  * RegTracker(Inst.MulRs2);
+               RegKnown(Inst.MulRd) := True;
                Count := Count + 1;
             
-           
             when DIV =>
-                -- The denominator is unknown and thus could be 0
-               if Integer(Regs(Inst.DivRs2)) = 0 
+               -- The denominator is set to zero (either assumed 0 if unknown
+               -- or checked if entered by MOV)
+               if Integer(RegTracker(Inst.DivRs2)) = 0
                then
                   return True;
                end if;
-               RegTracker(Inst.DivRd) := RegTracker(Inst.DivRs1) / 
-                 RegTracker(Inst.DivRs2);
+               RegTracker(Inst.DivRd) := RegTracker(Inst.DivRs1) 
+                 * RegTracker(Inst.DivRs2);
+               RegKnown(Inst.DivRd) := True;
                Count := Count + 1;
             
             -- makes sure that the difference of two valid values does not
             -- overflow nor underflow
             when SUB =>
-               if 
+               if not
                  -- both register values are known and their subtraction is 
                  -- outside of legal data values or ...
-                 RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) 
-                 > DataVal'Last or Regs(Inst.SubRs1) - Regs(Inst.SubRs2)
-                 < DataVal'First or 
+                 (RegKnown(Inst.SubRs1) and RegKnown(Inst.SubRs2) 
+                 and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) <= DataVal'Last)
+                 and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) >= DataVal'First))
+                 -- if a register is unknown while the other register known to be non 0
+                 or ((RegKnown(Inst.SubRs1)  and RegTracker(Inst.SubRs1) = 0 and 
+                        not RegKnown(Inst.SubRs2)) or
+                     (RegKnown(Inst.SubRs2) and RegTracker(Inst.SubRs2) = 0 and 
+                        not RegKnown(Inst.SubRs1))
+                 )
                  -- a value in the register is unknown
-                 RegTracker(Inst.SubRs1) = 0 or RegTracker(Inst.SubRs2) = 0
+                 --RegTracker(Inst.SubRs1) = 0 or RegTracker(Inst.SubRs2) = 0
                then
                   return True;
                end if;
                RegTracker(Inst.SubRd) := RegTracker(Inst.SubRs1) 
                  - RegTracker(Inst.SubRs2);
+               RegKnown(Inst.SubRd) := True;
                Count := Count + 1;
             
             when LDR =>
@@ -303,7 +334,6 @@ package body Machine with SPARK_Mode => On is
                   return True;
                end if;
                Count := Count + 1;
-                
             
             when STR => 
                if 

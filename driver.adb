@@ -40,8 +40,9 @@ begin
 
    -- Although execptions are removed from SPARK, the spec says use SPARK to 
    -- analyse VM and analyser, not driver... Also this has no effect on SPARK
-   -- proof besides a message appended to the end saying this isnt allowed.
-   -- otherwise proof is identical, thus has no meaningful effect on the proof.
+   -- proof besides a message appended to the end saying this isnt allowed, which
+   -- is removed by switching driver SPARK_Mode to Off.
+   -- Otherwise proof is identical, thus has no meaningful effect on the proof.
 exception
    when others => 
       Code := IllegalProgram;
