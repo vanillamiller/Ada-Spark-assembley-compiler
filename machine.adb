@@ -21,8 +21,14 @@ package body Machine with SPARK_Mode => On is
       
    procedure IncPC(Ret : out ReturnCode; Offs : in Offset) is
    begin
-      PC := ProgramCounter(Integer(PC) + Integer(Offs));
-      Ret := Success;
+      -- Mitigates PC overflow (SPARK warnings: 1-11)
+      if Integer(PC) + Integer(Offs) > Integer(ProgramCounter'Last) or
+        Integer(PC) + Integer(Offs) < Integer(ProgramCounter'First) then
+         Ret := IllegalProgram;
+      else
+         PC := ProgramCounter(Integer(PC) + Integer(Offs));
+         Ret := Success;
+      end if; 
    end IncPC;
    
    procedure DoAdd(Rd : in Reg; 
@@ -30,8 +36,14 @@ package body Machine with SPARK_Mode => On is
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
    begin
-      Regs(Rd) := Regs(Rs1) + Regs(Rs2);
-      Ret := Success;
+      if Integer(Regs(Rs1)) + Integer(Regs(Rs2)) > Integer(DataVal'Last) or
+        Integer(Regs(Rs1)) + Integer(Regs(Rs2)) < Integer(DataVal'First)
+      then
+         Ret := IllegalProgram;
+      else
+         Regs(Rd) := Regs(Rs1) + Regs(Rs2);
+         Ret := Success;
+      end if;     
    end DoAdd;
    
    procedure DoSub(Rd : in Reg; 
@@ -39,8 +51,14 @@ package body Machine with SPARK_Mode => On is
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
    begin
-      Regs(Rd) := Regs(Rs1) - Regs(Rs2);
-      Ret := Success;
+      if Integer(Regs(Rs1)) - Integer(Regs(Rs2)) > Integer(DataVal'Last) or
+        Integer(Regs(Rs1)) - Integer(Regs(Rs2)) < Integer(DataVal'First) then
+         Ret := IllegalProgram;
+      else
+         Regs(Rd) := Regs(Rs1) - Regs(Rs2);
+         Ret := Success;
+      end if;
+      
    end DoSub;
    
    procedure DoMul(Rd : in Reg; 
@@ -48,8 +66,13 @@ package body Machine with SPARK_Mode => On is
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
    begin
-      Regs(Rd) := Regs(Rs1) * Regs(Rs2);
-      Ret := Success;
+      if Integer(Regs(Rs1)) * Integer(Regs(Rs2)) > Integer(DataVal'Last) or
+        Integer(Regs(Rs1)) * Integer(Regs(Rs2)) < Integer(DataVal'First) then
+         Ret := IllegalProgram;
+      else
+         Regs(Rd) := Regs(Rs1) * Regs(Rs2);
+         Ret := Success;
+      end if;
    end DoMul;
    
    procedure DoDiv(Rd : in Reg; 
@@ -57,8 +80,12 @@ package body Machine with SPARK_Mode => On is
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
    begin
+      if Integer(Regs(Rs2)) = 0 then
+         Ret := IllegalProgram;
+      else
       Regs(Rd) := Regs(Rs1) / Regs(Rs2);
-      Ret := Success;
+         Ret := Success;
+      end if;
    end DoDiv;
    
    procedure DoLdr(Rd : in Reg; 
@@ -122,11 +149,30 @@ package body Machine with SPARK_Mode => On is
                DoDiv(Inst.DivRd,Inst.DivRs1,Inst.DivRs2,Ret);
                IncPC(Ret,1);
             when LDR =>
-               DoLdr(Inst.LdrRd,Inst.LdrRs,Inst.LdrOffs,Ret);
-               IncPC(Ret,1);
+               if integer(Inst.LdrRs) + Integer(Inst.LdrOffs) 
+                 > Integer(Addr'Last) or 
+                 integer(Inst.LdrRs) + Integer(Inst.LdrOffs) 
+                 < Integer(Addr'First) then
+                  
+                  Ret := IllegalProgram;
+               else
+                  DoLdr(Inst.LdrRd,Inst.LdrRs,Inst.LdrOffs,Ret);
+                  IncPC(Ret,1);
+               end if; 
+               
             when STR =>
-               DoStr(Inst.StrRa,Inst.StrOffs,Inst.StrRb,Ret);
-               IncPC(Ret,1);
+               if integer(Inst.StrRa) + Integer(Inst.StrOffs) 
+                 > Integer(Addr'Last) or 
+                 integer(Inst.StrRa) + Integer(Inst.StrOffs) 
+                 < Integer(Addr'First) then
+                  
+                  Ret := IllegalProgram;
+               else
+                  DoStr(Inst.StrRa,Inst.StrOffs,Inst.StrRb,Ret);
+                  IncPC(Ret,1);
+               end if;
+               
+               
             when MOV =>
                DoMov(Inst.MovRd,Inst.MovOffs,Ret);
                IncPC(Ret,1);
@@ -135,7 +181,7 @@ package body Machine with SPARK_Mode => On is
                Ret := Success;
                return;
             when JMP =>
-               IncPC(Ret,Inst.JmpOffs);
+                  IncPC(Ret,Inst.JmpOffs);     
             when JZ =>
                if Regs(Inst.JzRa) = 0 then
                   IncPC(Ret,Inst.JzOffs);
@@ -170,10 +216,12 @@ package body Machine with SPARK_Mode => On is
       
       -- Array that tracks values MOV'ed into registers adn the manipulation
       -- on these known register values.
-      -- It assumes both worst cases where increment or decrement by 1 would
-      -- cause overflow and decrement by 1 would cause underflow
       RegTracker : array (Reg) of DataVal := (others => 0);
       
+      -- Array that tracks if a register value is known or not, useful if 
+      -- user inputs 0, or 1 register is unknown and 1 register is known
+      -- to be 0. This will not lead to overflow in any case, except if
+      -- 0 is the known denominator.
       RegKnown : array (Reg) of Boolean := (others => False);
       
    begin
@@ -183,7 +231,6 @@ package body Machine with SPARK_Mode => On is
          inst := Prog(ProgramCounter(Count));
          
          case inst.Op is
-            
             when MOV =>
                if 
                  -- Makes sure no invalid values are entered into a register 
@@ -220,7 +267,7 @@ package body Machine with SPARK_Mode => On is
                  Inst.JzOffs < Offset'First or 
                  Inst.JzOffs > Offset'Last or
                  -- The register value is unknown
-                 RegTracker(Inst.JzRa) = 0
+                 not RegKnown(Inst.JzRa)
                then
                   return True; 
                end if;
@@ -233,16 +280,19 @@ package body Machine with SPARK_Mode => On is
                
             when ADD =>
                if not
-                 -- Reject if a register is unknown, or 2 known registers lead to 
-                 -- overflow or ...
+                 -- Reject if a register is unknown, or the sum of 2 known 
+                 -- registers lead to overflow or ...
                  (RegKnown(Inst.AddRs1) and RegKnown(Inst.AddRs2) 
-                 and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) <= DataVal'Last)
-                 and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) >= DataVal'First))
+                  and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) <= DataVal'Last)
+                  and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) >= DataVal'First))
+                 
                  -- if a register is unknown while the other register known to be non 0
-                 or ((RegKnown(Inst.AddRs1) and not(RegKnown(Inst.AddRs2)) and 
-                        RegTracker(Inst.AddRs1) = 0) or
-                    (RegKnown(Inst.AddRs2) and not(RegKnown(Inst.AddRs1)) and 
-                        RegTracker(Inst.AddRs2) = 0)
+                 or 
+                  ((RegKnown(Inst.AddRs1) and not(RegKnown(Inst.AddRs2)) and 
+                      RegTracker(Inst.AddRs1) = 0) 
+                   or
+                      (RegKnown(Inst.AddRs2) and not(RegKnown(Inst.AddRs1)) and 
+                         RegTracker(Inst.AddRs2) = 0)
                  )
                then
                   return True;
@@ -252,31 +302,27 @@ package body Machine with SPARK_Mode => On is
                RegKnown(Inst.AddRd) := True;
                Count := Count + 1;
             
-            -- makes sure the product of two valid values does not overflow 
-            -- or underflow
+            
             when MUL =>  
                if not
-                 -- A value in the register is unknown or ...
-                 -- RegTracker(Inst.MulRs1) = 0  or RegTracker(Inst.MulRs2) = 0 or
-                 -- both register values are known and their product is 
-                 -- outside of legal data values
-                 --(RegTrackerMax(Inst.MulRs1) * RegTrackerMax(Inst.MulRs2) > DataVal'Last)
-                 --and RegTrackerMin(Inst.MulRs1) * RegTrackerMin(Inst.MulRs2) 
-                 --< DataVal'First)
-                 -- Reject if a register is unknown, or 2 known registers lead to 
-                 -- overflow or ...
+                 -- Reject if a register is unknown, or product of 2 known 
+                 -- registers lead to overflow or ...
                  (RegKnown(Inst.MulRs1) and RegKnown(Inst.MulRs2) 
-                 and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) <= DataVal'Last)
-                 and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) >= DataVal'First))
+                  and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) <= DataVal'Last)
+                  and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) >= DataVal'First))
+                 
                  -- if a register is unknown while the other register known to be non 0
-                 or ((RegKnown(Inst.MulRs1) and not(RegKnown(Inst.MulRs2)) and 
-                        RegTracker(Inst.MulRs1) = 0) or
-                    (RegKnown(Inst.MulRs2) and not(RegKnown(Inst.MulRs1)) and 
-                        RegTracker(Inst.MulRs2) = 0)
+                 or 
+                 ((RegKnown(Inst.MulRs1) and not(RegKnown(Inst.MulRs2)) and 
+                     RegTracker(Inst.MulRs1) = 0) 
+                  or
+                  (RegKnown(Inst.MulRs2) and not(RegKnown(Inst.MulRs1)) and 
+                     RegTracker(Inst.MulRs2) = 0)
                  )
                then
                   return True;
                end if;
+               
                RegTracker(Inst.MulRd) := RegTracker(Inst.MulRs1) 
                  * RegTracker(Inst.MulRs2);
                RegKnown(Inst.MulRd) := True;
@@ -298,16 +344,18 @@ package body Machine with SPARK_Mode => On is
             -- overflow nor underflow
             when SUB =>
                if not
-                 -- both register values are known and their subtraction is 
-                 -- outside of legal data values or ...
+                 -- reject if both register values are known, or their 
+                 -- subtraction leads to overflow or ...
                  (RegKnown(Inst.SubRs1) and RegKnown(Inst.SubRs2) 
-                 and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) <= DataVal'Last)
-                 and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) >= DataVal'First))
+                  and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) <= DataVal'Last)
+                  and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) >= DataVal'First))
                  -- if a register is unknown while the other register known to be non 0
-                 or ((RegKnown(Inst.SubRs1)  and RegTracker(Inst.SubRs1) = 0 and 
-                        not RegKnown(Inst.SubRs2)) or
-                     (RegKnown(Inst.SubRs2) and RegTracker(Inst.SubRs2) = 0 and 
-                        not RegKnown(Inst.SubRs1))
+                 or 
+                 ((RegKnown(Inst.SubRs1)  and RegTracker(Inst.SubRs1) = 0 and 
+                    not RegKnown(Inst.SubRs2)) 
+                  or
+                  (RegKnown(Inst.SubRs2) and RegTracker(Inst.SubRs2) = 0 and 
+                    not RegKnown(Inst.SubRs1))
                  )
                  -- a value in the register is unknown
                  --RegTracker(Inst.SubRs1) = 0 or RegTracker(Inst.SubRs2) = 0
@@ -329,7 +377,7 @@ package body Machine with SPARK_Mode => On is
                  < Integer(Addr'First) or
                  Inst.LdrOffs > Offset'Last or Inst.LdrOffs < Offset'First or 
                  -- The register value is unknown
-                 RegTracker(Inst.LdrRs) = 0
+                 not RegKnown(Inst.LdrRs)
                then
                   return True;
                end if;
@@ -345,7 +393,7 @@ package body Machine with SPARK_Mode => On is
                    < Integer(Addr'First) or
                  Inst.StrOffs > Offset'Last or Inst.StrOffs < Offset'First or
                  -- The register value is unknown
-                 RegTracker(Inst.StrRa) = 0
+                 not RegKnown(Inst.StrRa)
                then
                   return True;
                end if;

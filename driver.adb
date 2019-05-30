@@ -4,7 +4,7 @@ with Machine;
 use Machine;
 with Debug; use Debug;
 
-procedure Driver with SPARK_Mode => Off is
+procedure Driver with SPARK_Mode => On is
    Prog : Program := (others => (Op => NOP));
    Code : ReturnCode;
    Result : Integer;
@@ -43,9 +43,9 @@ begin
    -- proof besides a message appended to the end saying this isnt allowed, which
    -- is removed by switching driver SPARK_Mode to Off.
    -- Otherwise proof is identical, thus has no meaningful effect on the proof.
-exception
-   when others => 
-      Code := IllegalProgram;
-      Put("Return Code: "); Put(Code'Image);
+-- exception
+   -- when others => 
+     -- Code := IllegalProgram;
+     -- Put("Return Code: "); Put(Code'Image);
       
 end Driver;
