@@ -46,5 +46,6 @@ package Machine with SPARK_Mode => On is
    -- not to encounter invalid behaviour while Cycles instructions are executed
    function DetectInvalidBehaviour(Prog : in Program; 
                                    Cycles : in Integer) return Boolean;
+     
 
 end Machine;

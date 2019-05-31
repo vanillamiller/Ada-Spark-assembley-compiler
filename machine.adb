@@ -21,7 +21,21 @@ package body Machine with SPARK_Mode => On is
       
    procedure IncPC(Ret : out ReturnCode; Offs : in Offset) is
    begin
-      -- Mitigates PC overflow (SPARK warnings: 1-11)
+-- Mitigates the following
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:146 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:139 (e.g. when PC = 1)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:132 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:123 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:149 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:120 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:117 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:144 (e.g. when PC = 1)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:129 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:114 (e.g. when PC = 65536)
+--machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:126 (e.g. when PC = 65536)
+--------------------------------------------------------------------------------
+-- This is caused by the Program counter going outside of its range, as JZ and JMP
+-- Could go over the program's MAX_PROGRAM_LENGTH
       if Integer(PC) + Integer(Offs) > Integer(ProgramCounter'Last) or
         Integer(PC) + Integer(Offs) < Integer(ProgramCounter'First) then
          Ret := IllegalProgram;
@@ -41,6 +55,7 @@ package body Machine with SPARK_Mode => On is
       Max : Integer := Integer(DataVal'Last);
       
    begin
+      
       Ret := Success;
       if -- If two positive numbers ...
         Val1 > 0 and Val2 > 0 then
@@ -51,7 +66,12 @@ package body Machine with SPARK_Mode => On is
          end if;
       end if;
       
-         
+      -- Mitigates the following:
+      -- machine.adb:33:29: medium: overflow check might fail, in call inlined at 
+      --  machine.adb:113 (e.g. when Regs = (others => -1073741825))
+      -------------------------------------------------------------------------
+      -- This is caused by two negative numbers summing and overlowing not only
+      -- data values but ada's 32 bit integers
       if -- If two negative numbers ...
          Val1 < 0 and Val2 < 0 then
          -- sum to a number smaller  than DataVal/Integer
@@ -61,7 +81,11 @@ package body Machine with SPARK_Mode => On is
          end if;
          
       end if;
-      
+      -- machine.adb:34:11: warning: unused assignment, in call inlined at 
+      --   machine.adb:113
+      -------------------------------------------------------------------------
+      -- Make use of Ret which was just assigned in this proceedure, and not used
+      -- within this proceedure
       if -- No chance of overflow
         Ret = Success then
                Regs(Rd) := Regs(Rs1) + Regs(Rs2);
@@ -81,7 +105,11 @@ package body Machine with SPARK_Mode => On is
       Min : Integer := Integer(DataVal'First);
       Max : Integer := Integer(DataVal'Last);
    begin
-   
+      -- machine.adb:42:29: medium: overflow check might fail, in call inlined 
+      --   at machine.adb:116 (e.g. when Regs = (1 => 1, others => -2147483648))
+      -------------------------------------------------------------------------
+      -- If too large of a number is subtracted from too small a number it
+      -- will go below DataVal's range.
       Ret := Success;
       if -- If a positive number is subtracted from a negative number ...
         Val1 < 0 and Val2 > 0 then
@@ -109,6 +137,10 @@ package body Machine with SPARK_Mode => On is
          end if;
       end if;
      
+      -- machine.adb:43:11: warning: unused assignment, in call inlined at 
+      --   machine.adb:116
+      --------------------------------------------------------------------
+      -- Removes percieved data flow anomaly
       if -- otherwise the subtraction will be SUCCESSful
       Ret = Success then
          Regs(Rd) := Regs(Rs1) - Regs(Rs2);
@@ -129,7 +161,9 @@ package body Machine with SPARK_Mode => On is
    begin
       Ret := Success;
       
-      if Val1 > 0 and Val2 > 0 then 
+      
+      if -- two positive numbers cause overflow
+        Val1 > 0 and Val2 > 0 then 
          if Max / Val1 < Val2 then
             Ret := IllegalProgram;
          end if;
@@ -156,6 +190,10 @@ package body Machine with SPARK_Mode => On is
          end if; 
       end if;
       
+      -- machine.adb:52:11: warning: unused assignment, in call inlined at 
+      --  machine.adb:119
+      --------------------------------------------------------------------
+      -- Removes percieved data flow anomaly
       if Ret = Success then
          Regs(Rd) := Regs(Rs1) * Regs(Rs2);
          
@@ -173,10 +211,14 @@ package body Machine with SPARK_Mode => On is
       Min : Integer := Integer(DataVal'First);
    begin
       Ret := Success;
-      
+      -- machine.adb:60:29: medium: divide by zero might fail, in call inlined 
+      --   at machine.adb:122 (e.g. when Regs = (others => 0))
+      ------------------------------------------------------------------------
+      -- Do not allow 0 in the denominator
       if Val2 = 0 then
          Ret := IllegalProgram;
       end if;
+      
       
       if (Val1 = Min and Val2 = -1) then
          Ret := IllegalProgram;
@@ -232,8 +274,13 @@ package body Machine with SPARK_Mode => On is
                    Offs : in Offset;
                    Ret : out ReturnCode) is
    begin
-      Regs(Rd) := DataVal(Offs);
       Ret := Success;
+      -- Redundancy to eliminate:
+      -- machine.adb:236:11: warning: unused assignment, in call inlined 
+      --   at machine.adb:332
+      if Ret = Success then
+         Regs(Rd) := DataVal(Offs);
+      end if;
    end DoMov;
    
    procedure ValidMemAccess(Rs : in Reg; 
@@ -360,11 +407,12 @@ package body Machine with SPARK_Mode => On is
    -- legal and that known register value instructions do not cause over/under
    -- flow
    function DetectInvalidBehaviour(Prog : in Program;
-                                   Cycles : in Integer) return Boolean is
+                                   Cycles : in Integer) return Boolean 
+   is
       
       -- Integer subtype in the range of ProgramCounter for easy incrementation,
       -- comparison and indexing Program instructions 
-      subtype InstrCount is Integer range 1..MEMORY_SIZE;
+      subtype InstrCount is Integer range 1..MAX_PROGRAM_LENGTH;
       Count : InstrCount := InstrCount'First;
       Inst : Instr;
       MinVal : Integer := Integer(DataVal'First);
@@ -380,15 +428,12 @@ package body Machine with SPARK_Mode => On is
       -- to be 0. This will not lead to overflow in any case, except if
       -- 0 is the known denoMinator.
       RegKnown : array (Reg) of Boolean := (others => False);
-      
-      RetCode : ReturnCode;
-      
       Val1 : Integer;
       Val2 : Integer;
       
    begin
       
-      RetCode := Success;
+  
       while(Count < Cycles) loop
          
          Inst := Prog(ProgramCounter(Count));
@@ -408,7 +453,12 @@ package body Machine with SPARK_Mode => On is
                
             
             when JMP =>
-               if
+               Val1 := Integer(Inst.JmpOffs);
+               if Val1 > 0 then
+                  if MaxVal - Val1 < Count then
+                     Return True;
+                  end if;    
+               elsif
                  -- Jumps outside of the line limit or below 1
                  Integer(Inst.JmpOffs) + Count > Cycles or 
                  Integer(Inst.JmpOffs) + Count < 1 or 
@@ -416,13 +466,19 @@ package body Machine with SPARK_Mode => On is
                  Inst.JmpOffs < Offset'First or 
                  Inst.JmpOffs > Offset'Last
                then
-                  return True;
+                  Return True;
+               else
+                  Count := Count + Integer(Inst.JmpOffs);
                end if;
-               Count := Count + Integer(Inst.JmpOffs);
+               
             
 
             when JZ =>
-               if 
+               if Integer(Inst.JmpOffs) > 0 then
+                  if MaxVal - Integer(Inst.JmpOffs) < Count then
+                     return True;
+                  end if;    
+               elsif 
                  -- Jumps outside of the line limit or below 1
                  Integer(Inst.JzOffs) + Count > Cycles or 
                  Integer(Inst.JzOffs) + Count < 1 or 
@@ -433,8 +489,10 @@ package body Machine with SPARK_Mode => On is
                  not RegKnown(Inst.JzRa)
                then
                   return True; 
+               else
+                  Count := Count + Integer(Inst.JzOffs);
                end if;
-               Count := Count + Integer(Inst.JzOffs);
+               
                  
             -- if a return statement is reached and no other condition
             -- has been breached then the program is valid 
@@ -580,30 +638,30 @@ package body Machine with SPARK_Mode => On is
                         -- ILLEGALPROGRAM
                         Return True;
                      end if;
-                  end if;
                   
-      
-                  if -- If a negative number is subtracted from a positive number ...
+                  elsif -- If a negative number is subtracted from a positive number ...
                     Val1 > 0 and Val2 < 0 then
                      if -(MaxVal + Val2) <= - Val1 then
                         -- and that positive number will go lower than DataVal/Integer
                         -- ILLEGALPROGRAM  
                         Return True;
                      end if;
-                  end if;
+                  
                   
      
-                  if -- If two negative numbers cause overflow => ILLEGALPROGRAM
+                  elsif -- If two negative numbers cause overflow => ILLEGALPROGRAM
                      -- 0 included as [(0 - Min => overflow) => ILLEGALPROGRAM]
                     Val1 = 0 and Val2 < 0 then
                      if MaxVal + Val2 < Val1 then
                         Return True;
                      end if;
-                  end if;
+                  else 
                   
                   RegTracker(Inst.SubRd) := RegTracker(Inst.SubRs1) 
                     - RegTracker(Inst.SubRs2);
-                  Count := Count + 1;
+                     Count := Count + 1;
+                  end if;
+                  
     
                elsif RegKnown(Inst.SubRs2) and 
                  Integer(RegTracker(Inst.SubRs2)) = 0
@@ -612,7 +670,7 @@ package body Machine with SPARK_Mode => On is
                   RegTracker(Inst.SubRd) := RegTracker(Inst.SubRs1) 
                     - RegTracker(Inst.SubRs2);
                   Count := Count + 1;
-               else RetCode := IllegalProgram;
+               else Return True;
                end if;
                
                   
@@ -721,11 +779,6 @@ package body Machine with SPARK_Mode => On is
                Count := Count + 1;
          
             end case;
-            
-      if RetCode = IllegalProgram then
-         Return True;
-      end if;
-      
        
       end loop;
       return True;
