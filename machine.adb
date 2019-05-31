@@ -221,17 +221,16 @@ package body Machine with SPARK_Mode => On is
          Ret := IllegalProgram;
       end if;
       
-      
       if (Val1 = Min and Val2 = -1) then
          Ret := IllegalProgram;
       end if;
+      
       -- machine.adb:61:11: warning: unused assignment, in call inlined at 
       -- machine.adb:122
       --------------------------------------------------------------------
       -- Removes percieved data flow anomaly
       if Ret = Success then
       Regs(Rd) := Regs(Rs1)/Regs(Rs2);
-         
       end if;
    end DoDiv;
    
@@ -243,13 +242,18 @@ package body Machine with SPARK_Mode => On is
       Val1 : Integer := Integer(Regs(Rs));
       Val2 : Integer := Integer(Offs);
    begin
+      
       Ret := Success;
-      if (Val1 <= 0 and Val2 >= 0 and -Val2 > Val1) or
-        (Val1 > 0 and Val2 < 0 and Val2  < -Val1)
-      then
-         Ret := IllegalProgram;
-      else
-         A := Addr(Regs(Rs) + DataVal(Offs));
+      if Val1 <= 0 and Val2 > 0 then
+         if -Val2 > Val1 then
+            Ret := IllegalProgram;
+         end if;
+      end if;
+      
+      if Val1 > 0 and Val2 <= 0 then
+         if Val2  < -Val1 then
+            Ret := IllegalProgram;
+         end if;
       end if;
       
     
@@ -260,6 +264,7 @@ package body Machine with SPARK_Mode => On is
       --   machine.adb:312 (e.g. when A = 0)
       
       if Ret = Success then
+         A := Addr(Regs(Rs) + DataVal(Offs));
          Regs(Rd) := Memory(A);
       end if;
       
@@ -270,14 +275,13 @@ package body Machine with SPARK_Mode => On is
                    Offs : in Offset;
                    Rb : in Reg;
                    Ret : out ReturnCode) is
-      A : Addr := Addr(Regs(Ra) + DataVal(Offs));   
+      A : Addr;  
    begin
       Ret := Success;
-      if Integer(A) <= 0 then
-         Ret := IllegalProgram;
-      end if;
+      
       
       if Ret = Success then
+         A := Addr(Regs(Ra) + DataVal(Offs));
          Memory(A) := Regs(Rb);
       end if;
       
@@ -315,7 +319,7 @@ package body Machine with SPARK_Mode => On is
             MemAccessAllowed := False;
          end if;
       elsif -- If two negative numbers ...
-         Val1 < 0 and Val2 < 0 then
+         Val1 <= 0 and Val2 <= 0 then
             MemAccessAllowed := False;
       elsif val1 < 0 and val2 > 0 then
          if -val2 >= val1 then
@@ -425,7 +429,7 @@ package body Machine with SPARK_Mode => On is
       
       -- Integer subtype in the range of ProgramCounter for easy incrementation,
       -- comparison and indexing Program instructions 
-      subtype InstrCount is Integer range 1..MAX_PROGRAM_LENGTH;
+      subtype InstrCount is Integer range 1..Cycles;
       Count : InstrCount := InstrCount'First;
       Inst : Instr;
       MinVal : Integer := Integer(DataVal'First);
@@ -446,11 +450,12 @@ package body Machine with SPARK_Mode => On is
       
    begin
       
-  
+      
       while(Count < Cycles) loop
          
-         Inst := Prog(ProgramCounter(Count));
          
+         Inst := Prog(ProgramCounter(Count));
+         Pragma Loop_Invariant (Count < Cycles and Count > 0);
          case Inst.Op is
             when MOV =>
                if 
@@ -471,33 +476,28 @@ package body Machine with SPARK_Mode => On is
                   if MaxVal - Val1 < Count then
                      Return True;
                   end if;    
-               elsif
+               end if;
+               if 
                  -- Jumps outside of the line limit or below 1
-                 Integer(Inst.JmpOffs) + Count > Cycles or 
-                 Integer(Inst.JmpOffs) + Count < 1 or 
-                 -- An invalid offset is entered
-                 Inst.JmpOffs < Offset'First or 
-                 Inst.JmpOffs > Offset'Last
+                 Integer(Inst.JmpOffs) + Count >= Cycles or 
+                 Integer(Inst.JmpOffs) + Count < 1  
                then
                   Return True;
                else
-                  Count := Count + Integer(Inst.JmpOffs);
+                  Count := Count + Val1;
                end if;
                
             
 
             when JZ =>
-               if Integer(Inst.JmpOffs) > 0 then
-                  if MaxVal - Integer(Inst.JmpOffs) < Count then
+               if Integer(Inst.JzOffs) > 0 then
+                  if MaxVal - Integer(Inst.JzOffs) < Count then
                      return True;
                   end if;    
                elsif 
                  -- Jumps outside of the line limit or below 1
-                 Integer(Inst.JzOffs) + Count > Cycles or 
-                 Integer(Inst.JzOffs) + Count < 1 or 
-                 -- An invalid offset is entered
-                 Inst.JzOffs < Offset'First or 
-                 Inst.JzOffs > Offset'Last or
+                 Integer(Inst.JzOffs) + Count >= Cycles or 
+                 Integer(Inst.JzOffs) + Count < 1 or
                  -- The register value is unknown
                  not RegKnown(Inst.JzRa)
                then
@@ -576,7 +576,7 @@ package body Machine with SPARK_Mode => On is
                   end if;
                   if Val1 < 0 and Val2 > 0 then
                      
-                     if MaxVal / Val1 > Val2 then
+                     if MinVal / Val2 > Val1 then
                         Return True;
                      end if;
                   end if;
@@ -624,9 +624,9 @@ package body Machine with SPARK_Mode => On is
                then
                   Return True;
                   
-               elsif RegKnown(Inst.DivRs2) and RegTracker(Inst.DivRs2) /= 0
+               elsif RegKnown(Inst.DivRs1) and RegKnown(Inst.DivRs2) and 
+                 RegTracker(Inst.DivRs2) /= 0
                then
-                  
                   RegTracker(Inst.DivRd) := RegTracker(Inst.DivRs1)
                     / RegTracker(Inst.DivRs2);
                   Count := Count + 1; 
@@ -790,7 +790,6 @@ package body Machine with SPARK_Mode => On is
             -- increment counter
             when NOP =>
                Count := Count + 1;
-         
             end case;
        
       end loop;
