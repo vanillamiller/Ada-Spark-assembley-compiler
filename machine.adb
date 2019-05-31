@@ -11,7 +11,7 @@ package body Machine with SPARK_Mode => On is
    type DataVal is range -(2**31) .. +(2**31 - 1);
       
    -- the registers
-   Regs : array (Reg) of DataVal := (others => -2000000000);
+   Regs : array (Reg) of DataVal := (others => 0);
    
    -- the memory
    Memory : array (Addr) of DataVal := (others => 0);
@@ -244,19 +244,18 @@ package body Machine with SPARK_Mode => On is
    begin
       
       Ret := Success;
-      if Val1 <= 0 and Val2 > 0 then
+      if Val1 < 0 and Val2 > 0 then
          if -Val2 > Val1 then
             Ret := IllegalProgram;
          end if;
       end if;
       
-      if Val1 > 0 and Val2 <= 0 then
+      if Val1 > 0 and Val2 < 0 then
          if Val2  < -Val1 then
             Ret := IllegalProgram;
          end if;
       end if;
       
-    
       -- Despite 0 being a valid Address, SPARK kept returning this
       -- machine.adb:195:33: medium: range check might fail, in call inlined at 
       --   machine.adb:303 (e.g. when A = 0)
@@ -455,7 +454,7 @@ package body Machine with SPARK_Mode => On is
          
          
          Inst := Prog(ProgramCounter(Count));
-         Pragma Loop_Invariant (Count < Cycles and Count > 0);
+         -- Pragma Loop_Invariant (Count < Cycles and Count > 0);
          case Inst.Op is
             when MOV =>
                if 
@@ -484,7 +483,7 @@ package body Machine with SPARK_Mode => On is
                then
                   Return True;
                else
-                  Count := Count + Val1;
+                  Count := Count + Integer(Inst.JmpOffs);
                end if;
                
             
@@ -734,6 +733,8 @@ package body Machine with SPARK_Mode => On is
                                   + DataVal(Inst.LdrOffs)));
                      Count := Count + 1;
                   end if;
+               else 
+                  Return True;
                end if;
                
                
@@ -777,6 +778,9 @@ package body Machine with SPARK_Mode => On is
                          Return True;
                         
                      end if;
+                  elsif val1 = 0 and val2 = 0 then
+                        return True;
+                       
                      
                   else
                      MemTracker(Addr(RegTracker(Inst.StrRa) 
