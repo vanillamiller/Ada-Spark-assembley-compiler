@@ -213,6 +213,8 @@ package body Machine with SPARK_Mode => On is
       Ret := Success;
       -- machine.adb:60:29: medium: divide by zero might fail, in call inlined 
       --   at machine.adb:122 (e.g. when Regs = (others => 0))
+      -- machine.adb:60:29: medium: overflow check might fail, in call inlined 
+      --   at machine.adb:122 (e.g. when Regs = (0 => -1, others => 0))
       ------------------------------------------------------------------------
       -- Do not allow 0 in the denominator
       if Val2 = 0 then
@@ -223,7 +225,10 @@ package body Machine with SPARK_Mode => On is
       if (Val1 = Min and Val2 = -1) then
          Ret := IllegalProgram;
       end if;
-      
+      -- machine.adb:61:11: warning: unused assignment, in call inlined at 
+      -- machine.adb:122
+      --------------------------------------------------------------------
+      -- Removes percieved data flow anomaly
       if Ret = Success then
       Regs(Rd) := Regs(Rs1)/Regs(Rs2);
          
@@ -234,17 +239,25 @@ package body Machine with SPARK_Mode => On is
                    Rs : in Reg; 
                    Offs : in Offset;
                    Ret : out ReturnCode) is
-      A : Addr := Addr(Regs(Rs) + DataVal(Offs));
+      A : Addr;
+      Val1 : Integer := Integer(Regs(Rs));
+      Val2 : Integer := Integer(Offs);
    begin
       Ret := Success;
+      if (Val1 <= 0 and Val2 >= 0 and -Val2 > Val1) or
+        (Val1 > 0 and Val2 < 0 and Val2  < -Val1)
+      then
+         Ret := IllegalProgram;
+      else
+         A := Addr(Regs(Rs) + DataVal(Offs));
+      end if;
+      
+    
       -- Despite 0 being a valid Address, SPARK kept returning this
       -- machine.adb:195:33: medium: range check might fail, in call inlined at 
       --   machine.adb:303 (e.g. when A = 0)
       -- machine.adb:213:33: medium: range check might fail, in call inlined at 
       --   machine.adb:312 (e.g. when A = 0)
-      if Integer(A) <= 0 then
-         Ret := IllegalProgram;
-      end if;
       
       if Ret = Success then
          Regs(Rd) := Memory(A);
