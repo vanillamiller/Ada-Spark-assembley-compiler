@@ -11,7 +11,7 @@ package body Machine with SPARK_Mode => On is
    type DataVal is range -(2**31) .. +(2**31 - 1);
       
    -- the registers
-   Regs : array (Reg) of DataVal := (others => 0);
+   Regs : array (Reg) of DataVal := (others => -2000000000);
    
    -- the memory
    Memory : array (Addr) of DataVal := (others => 0);
@@ -35,56 +35,156 @@ package body Machine with SPARK_Mode => On is
                    Rs1 : in Reg; 
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
+      Val1 : Integer := Integer(Regs(Rs1));
+      Val2 : Integer := Integer(Regs(Rs2));
+      Min : Integer := Integer(DataVal'First);
+      Max : Integer := Integer(DataVal'Last);
+      
    begin
-      if Integer(Regs(Rs1)) + Integer(Regs(Rs2)) > Integer(DataVal'Last) or
-        Integer(Regs(Rs1)) + Integer(Regs(Rs2)) < Integer(DataVal'First)
-      then
-         Ret := IllegalProgram;
-      else
-         Regs(Rd) := Regs(Rs1) + Regs(Rs2);
-         Ret := Success;
-      end if;     
+      Ret := Success;
+      if -- If two positive numbers ...
+        Val1 > 0 and Val2 > 0 then
+        -- sum to a numeber greater than DataVal/Integer
+        -- ILLEGALPROGRAM
+         if Max - Val1 < Val2 then
+            Ret := IllegalProgram;
+         end if;
+      end if;
+      
+         
+      if -- If two negative numbers ...
+         Val1 < 0 and Val2 < 0 then
+         -- sum to a number smaller  than DataVal/Integer
+         -- ILLEGALPROGRAM
+         if Min - Val1 > Val2 then
+            Ret := IllegalProgram;
+         end if;
+         
+      end if;
+      
+      if -- No chance of overflow
+        Ret = Success then
+               Regs(Rd) := Regs(Rs1) + Regs(Rs2);
+      end if;
+      
+            
+         
+        
    end DoAdd;
    
    procedure DoSub(Rd : in Reg; 
                    Rs1 : in Reg; 
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
+      Val1 : Integer := Integer(Regs(Rs1));
+      Val2 : Integer := Integer(Regs(Rs2));
+      Min : Integer := Integer(DataVal'First);
+      Max : Integer := Integer(DataVal'Last);
    begin
-      if Integer(Regs(Rs1)) - Integer(Regs(Rs2)) > Integer(DataVal'Last) or
-        Integer(Regs(Rs1)) - Integer(Regs(Rs2)) < Integer(DataVal'First) then
-         Ret := IllegalProgram;
-      else
-         Regs(Rd) := Regs(Rs1) - Regs(Rs2);
-         Ret := Success;
+   
+      Ret := Success;
+      if -- If a positive number is subtracted from a negative number ...
+        Val1 < 0 and Val2 > 0 then
+         if Min + Val2 > Val1 then
+        -- and that positive number will go lower than DataVal/Integer
+        -- ILLEGALPROGRAM
+            Ret := IllegalProgram;
+         end if;
       end if;
       
+      if -- If a negative number is subtracted from a positive number ...
+        Val1 > 0 and Val2 < 0 then
+         if Max + Val2 < Val1 then
+        -- and that positive number will go lower than DataVal/Integer
+        -- ILLEGALPROGRAM
+            Ret := IllegalProgram;
+         end if;
+      end if;
+     
+      if -- If two negative numbers cause overflow => ILLEGALPROGRAM
+         -- 0 included as [(0 - Min => overflow) => ILLEGALPROGRAM]
+        Val1 = 0 and Val2 < 0 then
+        if Max + Val2 < Val1 then
+         Ret := IllegalProgram;
+         end if;
+      end if;
+     
+      if -- otherwise the subtraction will be SUCCESSful
+      Ret = Success then
+         Regs(Rd) := Regs(Rs1) - Regs(Rs2);
+         
+      end if; 
+   
+
    end DoSub;
    
    procedure DoMul(Rd : in Reg; 
                    Rs1 : in Reg; 
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
+      Val1 : Integer := Integer(Regs(Rs1));
+      Val2 : Integer := Integer(Regs(Rs2));
+      Min : Integer := Integer(DataVal'First);
+      Max : Integer := Integer(DataVal'Last);
    begin
-      if Integer(Regs(Rs1)) * Integer(Regs(Rs2)) > Integer(DataVal'Last) or
-        Integer(Regs(Rs1)) * Integer(Regs(Rs2)) < Integer(DataVal'First) then
-         Ret := IllegalProgram;
-      else
-         Regs(Rd) := Regs(Rs1) * Regs(Rs2);
-         Ret := Success;
+      Ret := Success;
+      
+      if Val1 > 0 and Val2 > 0 then 
+         if Max / Val1 < Val2 then
+            Ret := IllegalProgram;
+         end if;
       end if;
+      
+      
+      if Val1 < 0 and Val2 > 0 then
+         if Min / Val2 > Val1 then
+            Ret := IllegalProgram;
+         end if;
+      end if;
+      
+         
+      if Val1 < 0 and Val2 < 0 then
+         if Max / Val1 > Val2 then
+            Ret := IllegalProgram;
+         end if;
+         
+      end if;
+      
+      if Val1 > 0 and Val2 < 0 then 
+         if Min / Val1 > Val2 then
+            Ret := IllegalProgram;
+         end if; 
+      end if;
+      
+      if Ret = Success then
+         Regs(Rd) := Regs(Rs1) * Regs(Rs2);
+         
+      end if;
+      
+   
    end DoMul;
    
    procedure DoDiv(Rd : in Reg; 
                    Rs1 : in Reg; 
                    Rs2 : in Reg;
                    Ret : out ReturnCode) is
+      Val1 : Integer := Integer(Regs(Rs1));
+      Val2 : Integer := Integer(Regs(Rs2));
+      Min : Integer := Integer(DataVal'First);
    begin
-      if Integer(Regs(Rs2)) = 0 then
+      Ret := Success;
+      
+      if Val2 = 0 then
          Ret := IllegalProgram;
-      else
-      Regs(Rd) := Regs(Rs1) / Regs(Rs2);
-         Ret := Success;
+      end if;
+      
+      if (Val1 = Min and Val2 = -1) then
+         Ret := IllegalProgram;
+      end if;
+      
+      if Ret = Success then
+      Regs(Rd) := Regs(Rs1)/Regs(Rs2);
+         
       end if;
    end DoDiv;
    
@@ -94,8 +194,21 @@ package body Machine with SPARK_Mode => On is
                    Ret : out ReturnCode) is
       A : Addr := Addr(Regs(Rs) + DataVal(Offs));
    begin
-      Regs(Rd) := Memory(A);
       Ret := Success;
+      -- Despite 0 being a valid Address, SPARK kept returning this
+      -- machine.adb:195:33: medium: range check might fail, in call inlined at 
+      --   machine.adb:303 (e.g. when A = 0)
+      -- machine.adb:213:33: medium: range check might fail, in call inlined at 
+      --   machine.adb:312 (e.g. when A = 0)
+      if Integer(A) <= 0 then
+         Ret := IllegalProgram;
+      end if;
+      
+      if Ret = Success then
+         Regs(Rd) := Memory(A);
+      end if;
+      
+     
    end DoLdr;
    
    procedure DoStr(Ra : in Reg;
@@ -104,8 +217,15 @@ package body Machine with SPARK_Mode => On is
                    Ret : out ReturnCode) is
       A : Addr := Addr(Regs(Ra) + DataVal(Offs));   
    begin
-      Memory(A) := Regs(Rb);
       Ret := Success;
+      if Integer(A) <= 0 then
+         Ret := IllegalProgram;
+      end if;
+      
+      if Ret = Success then
+         Memory(A) := Regs(Rb);
+      end if;
+      
    end DoStr;
    
    procedure DoMov(Rd : in Reg;
@@ -116,6 +236,45 @@ package body Machine with SPARK_Mode => On is
       Ret := Success;
    end DoMov;
    
+   procedure ValidMemAccess(Rs : in Reg; 
+                            Offs : in Offset;
+                           MemAccessAllowed : out Boolean) is 
+      -- MinVal : Integer := Integer(DataVal'First);
+      MaxVal : Integer := Integer(DataVal'Last);
+      MaxOffs : Integer := Integer(Offset'Last);
+      --MinOffs : Integer := Integer(Offset'First);
+      Val1 : Integer := Integer(Regs(Rs));
+      Val2 : Integer := Integer(Offs);
+   begin
+      MemAccessAllowed := False;
+      if -- If two positive numbers ...
+        Val1 > 0 and Val2 > 0 then
+        -- sum to a numeber greater than DataVal/Integer
+        -- ILLEGALPROGRAM
+         if MaxVal - Val1 < Val2 or MaxOffs - Val1 < Val2 then
+            MemAccessAllowed := False;
+         end if;
+      elsif -- If two negative numbers ...
+         Val1 < 0 and Val2 < 0 then
+            MemAccessAllowed := False;
+      elsif val1 < 0 and val2 > 0 then
+         if -val2 >= val1 then
+           MemAccessAllowed := False;
+         end if;
+      elsif val1 > 0 and val2 < 0 then
+         if val2 <= -val1 then
+           MemAccessAllowed := False;
+         end if;
+      else
+         MemAccessAllowed := True;
+      end if;
+      
+      
+      
+      
+   end ValidMemAccess;
+     
+   
    procedure ExecuteProgram(Prog : in Program;
                             Cycles : in Integer;
                             Ret : out ReturnCode;
@@ -123,10 +282,12 @@ package body Machine with SPARK_Mode => On is
    is
       CycleCount : Integer := 0;
       Inst : Instr;
+      MemAccessAllowed : Boolean;
    begin
       Ret := Success;
       PC := ProgramCounter'First;
       Result := 0;
+      
       while (CycleCount < Cycles and Ret = Success) loop
          Inst := Prog(PC);
          
@@ -149,27 +310,21 @@ package body Machine with SPARK_Mode => On is
                DoDiv(Inst.DivRd,Inst.DivRs1,Inst.DivRs2,Ret);
                IncPC(Ret,1);
             when LDR =>
-               if integer(Inst.LdrRs) + Integer(Inst.LdrOffs) 
-                 > Integer(Addr'Last) or 
-                 integer(Inst.LdrRs) + Integer(Inst.LdrOffs) 
-                 < Integer(Addr'First) then
-                  
-                  Ret := IllegalProgram;
-               else
+               ValidMemAccess(Inst.LdrRs, Inst.LdrOffs, MemAccessAllowed);
+               if  MemAccessAllowed then
                   DoLdr(Inst.LdrRd,Inst.LdrRs,Inst.LdrOffs,Ret);
                   IncPC(Ret,1);
+               else
+                  Ret := IllegalProgram;
                end if; 
                
             when STR =>
-               if integer(Inst.StrRa) + Integer(Inst.StrOffs) 
-                 > Integer(Addr'Last) or 
-                 integer(Inst.StrRa) + Integer(Inst.StrOffs) 
-                 < Integer(Addr'First) then
-                  
-                  Ret := IllegalProgram;
-               else
+               ValidMemAccess(Inst.StrRa, Inst.StrOffs, MemAccessAllowed);
+               if  MemAccessAllowed then
                   DoStr(Inst.StrRa,Inst.StrOffs,Inst.StrRb,Ret);
                   IncPC(Ret,1);
+               else
+                   Ret := IllegalProgram;
                end if;
                
                
@@ -211,26 +366,34 @@ package body Machine with SPARK_Mode => On is
       -- comparison and indexing Program instructions 
       subtype InstrCount is Integer range 1..MEMORY_SIZE;
       Count : InstrCount := InstrCount'First;
-      
       Inst : Instr;
-      
+      MinVal : Integer := Integer(DataVal'First);
+      MaxVal : Integer := Integer(DataVal'Last);
+      MaxOffs : Integer := Integer(Offset'Last);
       -- Array that tracks values MOV'ed into registers adn the manipulation
       -- on these known register values.
       RegTracker : array (Reg) of DataVal := (others => 0);
       
+      MemTracker : array (Addr) of DataVal := (others => 0);
       -- Array that tracks if a register value is known or not, useful if 
       -- user inputs 0, or 1 register is unknown and 1 register is known
       -- to be 0. This will not lead to overflow in any case, except if
-      -- 0 is the known denominator.
+      -- 0 is the known denoMinator.
       RegKnown : array (Reg) of Boolean := (others => False);
+      
+      RetCode : ReturnCode;
+      
+      Val1 : Integer;
+      Val2 : Integer;
       
    begin
       
+      RetCode := Success;
       while(Count < Cycles) loop
          
-         inst := Prog(ProgramCounter(Count));
+         Inst := Prog(ProgramCounter(Count));
          
-         case inst.Op is
+         case Inst.Op is
             when MOV =>
                if 
                  -- Makes sure no invalid values are entered into a register 
@@ -279,132 +442,290 @@ package body Machine with SPARK_Mode => On is
                return False;
                
             when ADD =>
-               if not
-                 -- Reject if a register is unknown, or the sum of 2 known 
-                 -- registers lead to overflow or ...
-                 (RegKnown(Inst.AddRs1) and RegKnown(Inst.AddRs2) 
-                  and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) <= DataVal'Last)
-                  and (RegTracker(Inst.AddRs1) + RegTracker(Inst.AddRs2) >= DataVal'First))
+               
+               if -- If both registers are known then see if add is succeessful
+                 (RegKnown(Inst.AddRs1) and RegKnown(Inst.AddRs2)) 
                  
-                 -- if a register is unknown while the other register known to be non 0
-                 or 
-                  ((RegKnown(Inst.AddRs1) and not(RegKnown(Inst.AddRs2)) and 
-                      RegTracker(Inst.AddRs1) = 0) 
-                   or
-                      (RegKnown(Inst.AddRs2) and not(RegKnown(Inst.AddRs1)) and 
-                         RegTracker(Inst.AddRs2) = 0)
-                 )
                then
-                  return True;
+                  Val1 := Integer(RegTracker(Inst.AddRs1));
+                  Val2 := Integer(RegTracker(Inst.AddRs2));
+                  if -- If two positive numbers ...
+                    Val1 > 0 and Val2 > 0 then
+                     -- sum to a numeber greater than DataVal/Integer
+                     -- ILLEGALPROGRAM
+                     if MaxVal - Val1 < Val2 then
+                        Return True; 
+                     end if;
+                  end if;
+                  
+      
+         
+                  if -- If two negative numbers ...
+                    Val1 < 0 and Val2 < 0 then
+                     -- sum to a number smaller  than DataVal/Integer
+                     -- ILLEGALPROGRAM
+                     if MinVal - Val1 > Val2 then
+                        Return True;
+                     end if;
+                  end if;
+                  
+                  RegTracker(Inst.AddRd) := RegTracker(Inst.AddRs1) 
+                    + RegTracker(Inst.AddRs2);
+                  Count := Count + 1;
+                  
+               elsif -- Any n + 0 = n -> Valid
+                 ((not RegKnown(Inst.AddRs1)) and 
+                    Integer(RegTracker(Inst.AddRs2)) = 0 and
+                      RegKnown(Inst.AddRs2)) or
+                 ((not RegKnown(Inst.AddRs2)) and 
+                    Integer(RegTracker(Inst.AddRs1)) = 0 and
+                      RegKnown(Inst.AddRs1))
+               then
+                  RegTracker(Inst.AddRd) := RegTracker(Inst.AddRs1) 
+                    + RegTracker(Inst.AddRs2);
+                  Count := Count + 1;
+               else
+                 Return True;
                end if;
-               RegTracker(Inst.AddRd) := RegTracker(Inst.AddRs1) 
-                 + RegTracker(Inst.AddRs2);
-               RegKnown(Inst.AddRd) := True;
-               Count := Count + 1;
+               
             
             
             when MUL =>  
-               if not
+               Val1 := Integer(RegTracker(Inst.MulRs1));
+               Val2 := Integer(RegTracker(Inst.MulRs2));
+               if
                  -- Reject if a register is unknown, or product of 2 known 
                  -- registers lead to overflow or ...
-                 (RegKnown(Inst.MulRs1) and RegKnown(Inst.MulRs2) 
-                  and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) <= DataVal'Last)
-                  and (RegTracker(Inst.MulRs1) * RegTracker(Inst.MulRs2) >= DataVal'First))
-                 
-                 -- if a register is unknown while the other register known to be non 0
-                 or 
-                 ((RegKnown(Inst.MulRs1) and not(RegKnown(Inst.MulRs2)) and 
-                     RegTracker(Inst.MulRs1) = 0) 
-                  or
-                  (RegKnown(Inst.MulRs2) and not(RegKnown(Inst.MulRs1)) and 
-                     RegTracker(Inst.MulRs2) = 0)
-                 )
+                 RegKnown(Inst.MulRs1) and RegKnown(Inst.MulRs2)
                then
-                  return True;
+                   if Val1 > 0 and Val2 > 0 then 
+                     if MaxVal / Val1 < Val2 then
+                        Return True;
+                     end if;
+                  end if;
+                  if Val1 < 0 and Val2 > 0 then
+                     
+                     if MaxVal / Val1 > Val2 then
+                        Return True;
+                     end if;
+                  end if;
+                  
+                  if Val1 < 0 and Val2 < 0 then
+                     if MaxVal / Val1 > Val2 then
+                        Return True;
+                     end if;                   
+                  end if;
+                  
+                  if Val1 > 0 and Val2 < 0 then                    
+                     if MinVal / Val1 > Val2 then
+                        Return True;
+                     end if;
+                  end if;
+                  
+                  RegTracker(Inst.MulRd) := RegTracker(Inst.MulRs1) 
+                    * RegTracker(Inst.MulRs2);
+                  Count := Count + 1;
+                  
+               elsif (RegKnown(Inst.MulRs1) and Val1 = 0 and 
+                        not RegKnown(Inst.MulRs2)) or 
+                 (RegKnown(Inst.MulRs2) and Val2 = 0 and 
+                        not RegKnown(Inst.MulRs1))
+               then
+                  RegTracker(Inst.MulRd) := RegTracker(Inst.MulRs1) 
+                    * RegTracker(Inst.MulRs2);
+                  Count := Count + 1;
+               else 
+                  Return True;
                end if;
                
-               RegTracker(Inst.MulRd) := RegTracker(Inst.MulRs1) 
-                 * RegTracker(Inst.MulRs2);
-               RegKnown(Inst.MulRd) := True;
-               Count := Count + 1;
+               
+               
             
             when DIV =>
-               -- The denominator is set to zero (either assumed 0 if unknown
+               -- The denoMinator is set to zero (either assumed 0 if unknown
                -- or checked if entered by MOV)
-               if Integer(RegTracker(Inst.DivRs2)) = 0
+               Val1 := Integer(RegTracker(Inst.DivRs1));
+               Val2 := Integer(RegTracker(Inst.DivRs2));
+               if
+                 RegKnown(Inst.DivRs2) and RegKnown(Inst.DivRs1)
+                 and ((Val2 = -1 and Val1 = MinVal) or 
+                         (Val1 = -1 and Val2 = MinVal))
                then
-                  return True;
+                  Return True;
+                  
+               elsif RegKnown(Inst.DivRs2) and RegTracker(Inst.DivRs2) /= 0
+               then
+                  
+                  RegTracker(Inst.DivRd) := RegTracker(Inst.DivRs1)
+                    / RegTracker(Inst.DivRs2);
+                  Count := Count + 1; 
+               else
+                  Return True;
                end if;
-               RegTracker(Inst.DivRd) := RegTracker(Inst.DivRs1) 
-                 * RegTracker(Inst.DivRs2);
-               RegKnown(Inst.DivRd) := True;
-               Count := Count + 1;
-            
+
             -- makes sure that the difference of two valid values does not
             -- overflow nor underflow
             when SUB =>
-               if not
+               if
                  -- reject if both register values are known, or their 
                  -- subtraction leads to overflow or ...
-                 (RegKnown(Inst.SubRs1) and RegKnown(Inst.SubRs2) 
-                  and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) <= DataVal'Last)
-                  and (RegTracker(Inst.SubRs1) - RegTracker(Inst.SubRs2) >= DataVal'First))
-                 -- if a register is unknown while the other register known to be non 0
-                 or 
-                 ((RegKnown(Inst.SubRs1)  and RegTracker(Inst.SubRs1) = 0 and 
-                    not RegKnown(Inst.SubRs2)) 
-                  or
-                  (RegKnown(Inst.SubRs2) and RegTracker(Inst.SubRs2) = 0 and 
-                    not RegKnown(Inst.SubRs1))
-                 )
-                 -- a value in the register is unknown
-                 --RegTracker(Inst.SubRs1) = 0 or RegTracker(Inst.SubRs2) = 0
+                 RegKnown(Inst.SubRs1) and RegKnown(Inst.SubRs2) 
                then
-                  return True;
+                  Val1 := Integer(RegTracker(Inst.SubRs1));
+                  Val2 := Integer(RegTracker(Inst.SubRs2));
+                  if -- If a positive number is subtracted from a negative number ...
+                    Val1 < 0 and Val2 > 0 then
+                     if MinVal + Val2 > Val1 then
+                        -- and that positive number will go lower than DataVal/Integer
+                        -- ILLEGALPROGRAM
+                        Return True;
+                     end if;
+                  end if;
+                  
+      
+                  if -- If a negative number is subtracted from a positive number ...
+                    Val1 > 0 and Val2 < 0 then
+                     if -(MaxVal + Val2) <= - Val1 then
+                        -- and that positive number will go lower than DataVal/Integer
+                        -- ILLEGALPROGRAM  
+                        Return True;
+                     end if;
+                  end if;
+                  
+     
+                  if -- If two negative numbers cause overflow => ILLEGALPROGRAM
+                     -- 0 included as [(0 - Min => overflow) => ILLEGALPROGRAM]
+                    Val1 = 0 and Val2 < 0 then
+                     if MaxVal + Val2 < Val1 then
+                        Return True;
+                     end if;
+                  end if;
+                  
+                  RegTracker(Inst.SubRd) := RegTracker(Inst.SubRs1) 
+                    - RegTracker(Inst.SubRs2);
+                  Count := Count + 1;
+    
+               elsif RegKnown(Inst.SubRs2) and 
+                 Integer(RegTracker(Inst.SubRs2)) = 0
+                 and not RegKnown(Inst.SubRs1)
+               then
+                  RegTracker(Inst.SubRd) := RegTracker(Inst.SubRs1) 
+                    - RegTracker(Inst.SubRs2);
+                  Count := Count + 1;
+               else RetCode := IllegalProgram;
                end if;
-               RegTracker(Inst.SubRd) := RegTracker(Inst.SubRs1) 
-                 - RegTracker(Inst.SubRs2);
-               RegKnown(Inst.SubRd) := True;
-               Count := Count + 1;
+               
+                  
             
             when LDR =>
-               if 
+               
+               if RegKnown(Inst.LdrRs)
                  -- The register value is known and the sum of the value and
                  -- the offset are outside of legal addresses or ...
-                 Integer(DataVal(Inst.LdrOffs) + RegTracker(Inst.LdrRs))  
-                 > Integer(Addr'Last) or
-                 Integer(DataVal(Inst.LdrOffs) + RegTracker(Inst.LdrRs)) 
-                 < Integer(Addr'First) or
-                 Inst.LdrOffs > Offset'Last or Inst.LdrOffs < Offset'First or 
-                 -- The register value is unknown
-                 not RegKnown(Inst.LdrRs)
                then
-                  return True;
+                  Val1 := Integer(RegTracker(Inst.LdrRs));
+                  Val2 := Integer(Inst.LdrOffs);
+                  if -- If two positive numbers ...
+                    Val1 > 0 and Val2 > 0 then
+                     -- sum to a numeber greater than DataVal/Integer
+                     -- ILLEGALPROGRAM
+                     if MaxVal - Val1 < Val2 or MaxOffs - Val1 < Val2 then
+                        
+                        Return True;
+                        
+                     end if;
+                     
+                  elsif -- If two negative numbers ...
+                  
+                    Val1 < 0 and Val2 < 0 then
+                     
+                      Return True;
+                     
+                  elsif val1 < 0 and val2 > 0 then
+                     
+                     if -val2 > val1 then
+                        
+                         Return True;
+                        
+                     end if;
+                     
+                  elsif val1 > 0 and val2 < 0 then
+                     
+                     if val2 < -val1 then
+                        
+                         Return True;
+                        
+                     end if;
+                     
+                  else
+                     RegTracker(Inst.LdrRd) := 
+                       MemTracker(Addr(RegTracker(Inst.LdrRs) 
+                                  + DataVal(Inst.LdrOffs)));
+                     Count := Count + 1;
+                  end if;
                end if;
-               Count := Count + 1;
+               
+               
             
             when STR => 
-               if 
+               
+               if RegKnown(Inst.StrRb)
                  -- The register value is known and the sum of the value and
                  -- the offset are outside of legal addresses or ...
-                 Integer(DataVal(Inst.StrOffs) + RegTracker(Inst.StrRa)) 
-                 > Integer(Addr'Last) or
-                 Integer(DataVal(Inst.StrOffs) + RegTracker(Inst.StrRa)) 
-                   < Integer(Addr'First) or
-                 Inst.StrOffs > Offset'Last or Inst.StrOffs < Offset'First or
-                 -- The register value is unknown
-                 not RegKnown(Inst.StrRa)
                then
-                  return True;
+                  Val1 := Integer(RegTracker(Inst.StrRa));
+                  Val2 := Integer(Inst.StrOffs);
+                  if -- If two positive numbers ...
+                    Val1 > 0 and Val2 > 0 then
+                     -- sum to a numeber greater than DataVal/Integer
+                     -- ILLEGALPROGRAM
+                     if MaxVal - Val1 < Val2 or MaxOffs - Val1 < Val2 then
+                        
+                        Return True;
+                        
+                     end if;
+                     
+                  elsif -- If two negative numbers ...
+                  
+                    Val1 < 0 and Val2 < 0 then
+                     
+                      Return True;
+                     
+                  elsif val1 < 0 and val2 > 0 then
+                     
+                     if -val2 > val1 then
+                        
+                         Return True;
+                        
+                     end if;
+                     
+                  elsif val1 > 0 and val2 < 0 then
+                     
+                     if val2 < -val1 then
+                        
+                         Return True;
+                        
+                     end if;
+                     
+                  else
+                     MemTracker(Addr(RegTracker(Inst.StrRa) 
+                                + DataVal(Inst.StrOffs)))
+                          := RegTracker(Inst.StrRb);
+                     Count := Count + 1;
+                          
+                  end if;
                end if;
-               Count := Count + 1;
             
             -- increment counter
             when NOP =>
                Count := Count + 1;
          
             end case;
-              
+            
+      if RetCode = IllegalProgram then
+         Return True;
+      end if;
+      
        
       end loop;
       return True;
