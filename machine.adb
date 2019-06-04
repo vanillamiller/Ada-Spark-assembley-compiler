@@ -263,7 +263,7 @@ package body Machine with SPARK_Mode => On is
       --   machine.adb:312 (e.g. when A = 0)
 
       if Ret = Success then
-        -- if DataVal(Offs) <= 65535 and DataVal(Offs) >= 0 then
+        -- e.m.
           if Regs(Rs) + DataVal(Offs) <= 65535 and Regs(Rs) + DataVal(Offs) >= 0 then
             if Addr(Regs(Rs) + DataVal(Offs)) < Addr'Last and Addr(Regs(Rs) + DataVal(Offs)) > Addr'First then
               A := Addr(Regs(Rs) + DataVal(Offs));
@@ -286,6 +286,7 @@ package body Machine with SPARK_Mode => On is
 
 
       if Ret = Success then
+        -- e.m
         if Regs(Ra) + DataVal(Offs) <= 65535 and Regs(Ra) + DataVal(Offs) >= 0 then
           if Addr(Regs(Ra) + DataVal(Offs)) < Addr'Last and Addr(Regs(Ra) + DataVal(Offs)) > Addr'First then
               A := Addr(Regs(Ra) + DataVal(Offs));
@@ -439,7 +440,7 @@ package body Machine with SPARK_Mode => On is
       -- Integer subtype in the range of ProgramCounter for easy incrementation,
       -- comparison and indexing Program instructions
       subtype InstrCount is Integer range 1..Cycles;
-      Count : InstrCount := InstrCount'First;
+      Count : Integer := Integer(InstrCount'First); --e.m.
       Inst : Instr;
       MinVal : Integer := Integer(DataVal'First);
       MaxVal : Integer := Integer(DataVal'Last);
@@ -462,8 +463,9 @@ package body Machine with SPARK_Mode => On is
 
       while(Count < Cycles) loop
 
-
+        if Count > 0 and Count < 65537 then --e.m.
          Inst := Prog(ProgramCounter(Count));
+
          -- Pragma Loop_Invariant (Count < Cycles and Count > 0);
          case Inst.Op is
             when MOV =>
@@ -738,6 +740,7 @@ package body Machine with SPARK_Mode => On is
                      end if;
 
                   else
+                    -- e.m
                     if RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs) <= 65535 and RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs) >= 0 then
                       if Addr(RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs)) < Addr'Last and Addr(RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs)) > Addr'First then
                           RegTracker(Inst.LdrRd) :=
@@ -797,6 +800,7 @@ package body Machine with SPARK_Mode => On is
 
 
                   else
+                    --e.m.
                     if RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs) <= 65535 and RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs) >= 0 then
                       if Addr(RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs)) < Addr'Last and Addr(RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs)) > Addr'First then
                           MemTracker(Addr(RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs)))
@@ -811,7 +815,7 @@ package body Machine with SPARK_Mode => On is
             when NOP =>
                Count := Count + 1;
             end case;
-
+        end if; --e.m.
       end loop;
       return True;
    end DetectInvalidBehaviour;
