@@ -2,40 +2,24 @@ with Instruction;
 use Instruction;
 with Debug; use Debug;
 
--- used so we can print TAB character
 with Ada.Characters.Latin_1;
 
 package body Machine with SPARK_Mode => On is
-   -- data values are 32-bit integers
-   -- this is the type of words used in the virtual machine
+
    type DataVal is range -(2**31) .. +(2**31 - 1);
 
-   -- the registers
    Regs : array (Reg) of DataVal := (others => 0);
 
-   -- the memory
    Memory : array (Addr) of DataVal := (others => 0);
 
-   -- the program counter
    PC : ProgramCounter := ProgramCounter'First;
 
    procedure IncPC(Ret : out ReturnCode; Offs : in Offset) is
    begin
--- Mitigates the following
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:146 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:139 (e.g. when PC = 1)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:132 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:123 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:149 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:120 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:117 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:144 (e.g. when PC = 1)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:129 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:114 (e.g. when PC = 65536)
---machine.adb:24:40: medium: range check might fail, in call inlined at machine.adb:126 (e.g. when PC = 65536)
---------------------------------------------------------------------------------
--- This is caused by the Program counter going outside of its range, as JZ and JMP
--- Could go over the program's MAX_PROGRAM_LENGTH
+
+-- This check prevents the PC from being assigned a value that is outside of
+-- its allowable range, i.e. outside the set number of lines in the program,
+-- which is [1, 65536] aka [1, MAX_PROGRAM_LENGTH]
       if Integer(PC) + Integer(Offs) > Integer(ProgramCounter'Last) or
         Integer(PC) + Integer(Offs) < Integer(ProgramCounter'First) then
          Ret := IllegalProgram;
@@ -45,6 +29,8 @@ package body Machine with SPARK_Mode => On is
       end if;
    end IncPC;
 
+   -- If the sum of numbers held in R1 and R2 falls outside the range of
+   -- ada's 32 bit integers, then return ILLEGALPROGRAM
    procedure DoAdd(Rd : in Reg;
                    Rs1 : in Reg;
                    Rs2 : in Reg;
@@ -55,44 +41,34 @@ package body Machine with SPARK_Mode => On is
       Max : Integer := Integer(DataVal'Last);
 
    begin
-
       Ret := Success;
       if -- If two positive numbers ...
         Val1 > 0 and Val2 > 0 then
         -- sum to a numeber greater than DataVal/Integer
-        -- ILLEGALPROGRAM
+        -- return ILLEGALPROGRAM
          if Max - Val1 < Val2 then
             Ret := IllegalProgram;
          end if;
       end if;
 
-      -- Mitigates the following:
-      -- machine.adb:33:29: medium: overflow check might fail, in call inlined at
-      --  machine.adb:113 (e.g. when Regs = (others => -1073741825))
-      -------------------------------------------------------------------------
-      -- This is caused by two negative numbers summing and overlowing not only
-      -- data values but ada's 32 bit integers
+
       if -- If two negative numbers ...
          Val1 < 0 and Val2 < 0 then
-         -- sum to a number smaller  than DataVal/Integer
-         -- ILLEGALPROGRAM
+         -- sum to a number smaller than DataVal/Integer
+         -- then return ILLEGALPROGRAM
          if Min - Val1 > Val2 then
             Ret := IllegalProgram;
+            -- This also makes use of Ret, which was assigned but unused in then
+            -- provided implementation
          end if;
 
       end if;
-      -- machine.adb:34:11: warning: unused assignment, in call inlined at
-      --   machine.adb:113
-      -------------------------------------------------------------------------
-      -- Make use of Ret which was just assigned in this proceedure, and not used
-      -- within this proceedure
-      if -- No chance of overflow
+      -- Check whether Ret = 'Success' (i.e. no chance of overflow detected),
+      -- if so then proceed with addition.
+      if
         Ret = Success then
                Regs(Rd) := Regs(Rs1) + Regs(Rs2);
       end if;
-
-
-
 
    end DoAdd;
 
@@ -105,17 +81,14 @@ package body Machine with SPARK_Mode => On is
       Min : Integer := Integer(DataVal'First);
       Max : Integer := Integer(DataVal'Last);
    begin
-      -- machine.adb:42:29: medium: overflow check might fail, in call inlined
-      --   at machine.adb:116 (e.g. when Regs = (1 => 1, others => -2147483648))
-      -------------------------------------------------------------------------
-      -- If too large of a number is subtracted from too small a number it
-      -- will go below DataVal's range.
+      -- If the result of subtracting the value stored in R2 from the value
+      -- stored in R1 will go below DataVal's range, then return ILLEGALPROGRAM.
       Ret := Success;
       if -- If a positive number is subtracted from a negative number ...
         Val1 < 0 and Val2 > 0 then
          if Min + Val2 > Val1 then
-        -- and that positive number will go lower than DataVal/Integer
-        -- ILLEGALPROGRAM
+        -- and that positive number will go lower than DataVal/Integer,
+        -- then return ILLEGALPROGRAM
             Ret := IllegalProgram;
          end if;
       end if;
@@ -123,8 +96,8 @@ package body Machine with SPARK_Mode => On is
       if -- If a negative number is subtracted from a positive number ...
         Val1 > 0 and Val2 < 0 then
          if Max + Val2 < Val1 then
-        -- and that positive number will go lower than DataVal/Integer
-        -- ILLEGALPROGRAM
+        -- and that positive number will go lower than DataVal/Integer,
+        -- then return ILLEGALPROGRAM
             Ret := IllegalProgram;
          end if;
       end if;
@@ -134,22 +107,22 @@ package body Machine with SPARK_Mode => On is
         Val1 = 0 and Val2 < 0 then
         if Max + Val2 < Val1 then
          Ret := IllegalProgram;
+         -- This also makes use of Ret, which was assigned but unused in then
+        -- provided implementation
          end if;
       end if;
 
-      -- machine.adb:43:11: warning: unused assignment, in call inlined at
-      --   machine.adb:116
-      --------------------------------------------------------------------
-      -- Removes percieved data flow anomaly
-      if -- otherwise the subtraction will be SUCCESSful
-      Ret = Success then
+      -- Check whether Ret = 'Success' (i.e. no chance of overflow detected),
+      -- if so then proceed with subtraction.
+      if Ret = Success then
          Regs(Rd) := Regs(Rs1) - Regs(Rs2);
 
       end if;
 
-
    end DoSub;
 
+   -- If the multiplication of numbers held in R1 and R2 falls outside the range of
+    -- ada's 32 bit integers, then return ILLEGALPROGRAM
    procedure DoMul(Rd : in Reg;
                    Rs1 : in Reg;
                    Rs2 : in Reg;
@@ -160,48 +133,50 @@ package body Machine with SPARK_Mode => On is
       Max : Integer := Integer(DataVal'Last);
    begin
       Ret := Success;
+      -- The below code makes use of Ret, which was assigned but unused in then
+      -- provided implementation
 
-
-      if -- two positive numbers cause overflow
-        Val1 > 0 and Val2 > 0 then
+      -- if the product of two positive numbers cause overflow, return ILLEGALPROGRAM
+      if Val1 > 0 and Val2 > 0 then
          if Max / Val1 < Val2 then
             Ret := IllegalProgram;
          end if;
       end if;
 
-
+      -- if the product of one negative and one positive number causes overflow,
+      -- return ILLEGALPROGRAM
       if Val1 < 0 and Val2 > 0 then
          if Min / Val2 > Val1 then
             Ret := IllegalProgram;
          end if;
       end if;
 
-
+      -- if the product of two negative numbers cause overflow, return ILLEGALPROGRAM
       if Val1 < 0 and Val2 < 0 then
          if Max / Val1 > Val2 then
             Ret := IllegalProgram;
          end if;
-
       end if;
 
+      -- if the product of one positive and one nagative number causes overflow,
+      -- return ILLEGALPROGRAM
       if Val1 > 0 and Val2 < 0 then
          if Min / Val1 > Val2 then
             Ret := IllegalProgram;
          end if;
       end if;
 
-      -- machine.adb:52:11: warning: unused assignment, in call inlined at
-      --  machine.adb:119
-      --------------------------------------------------------------------
-      -- Removes percieved data flow anomaly
+      -- Check whether Ret = 'Success' (i.e. no chance of overflow detected),
+      -- if so then proceed with addition.
       if Ret = Success then
          Regs(Rd) := Regs(Rs1) * Regs(Rs2);
-
       end if;
 
 
    end DoMul;
 
+   -- If an instruction attempts to divide any number by zero, return
+   -- 'ILLEGALPROGRAM' to indicate invalid behaviour
    procedure DoDiv(Rd : in Reg;
                    Rs1 : in Reg;
                    Rs2 : in Reg;
@@ -211,12 +186,8 @@ package body Machine with SPARK_Mode => On is
       Min : Integer := Integer(DataVal'First);
    begin
       Ret := Success;
-      -- machine.adb:60:29: medium: divide by zero might fail, in call inlined
-      --   at machine.adb:122 (e.g. when Regs = (others => 0))
-      -- machine.adb:60:29: medium: overflow check might fail, in call inlined
-      --   at machine.adb:122 (e.g. when Regs = (0 => -1, others => 0))
-      ------------------------------------------------------------------------
-      -- Do not allow 0 in the denominator
+      -- the below make use of Ret, which was assigned but unused in
+      -- the provided implementation
       if Val2 = 0 then
          Ret := IllegalProgram;
       end if;
@@ -225,15 +196,15 @@ package body Machine with SPARK_Mode => On is
          Ret := IllegalProgram;
       end if;
 
-      -- machine.adb:61:11: warning: unused assignment, in call inlined at
-      -- machine.adb:122
-      --------------------------------------------------------------------
-      -- Removes percieved data flow anomaly
+      -- if no zero in denominator, indicated by ret = success, then proceed
+      -- with division
       if Ret = Success then
       Regs(Rd) := Regs(Rs1)/Regs(Rs2);
       end if;
    end DoDiv;
 
+   -- check that Val1 + Val2 will compute to a valid value, and then that those
+   -- values are withiin the range of a valid mem address
    procedure DoLdr(Rd : in Reg;
                    Rs : in Reg;
                    Offs : in Offset;
@@ -242,8 +213,8 @@ package body Machine with SPARK_Mode => On is
       Val1 : Integer := Integer(Regs(Rs));
       Val2 : Integer := Integer(Offs);
    begin
-
       Ret := Success;
+      --below also makes use of Ret,which was assigned and unused in provided VM
       if Val1 < 0 and Val2 > 0 then
          if -Val2 > Val1 then
             Ret := IllegalProgram;
@@ -256,37 +227,27 @@ package body Machine with SPARK_Mode => On is
          end if;
       end if;
 
-      -- Despite 0 being a valid Address, SPARK kept returning this
-      -- machine.adb:195:33: medium: range check might fail, in call inlined at
-      --   machine.adb:303 (e.g. when A = 0)
-      -- machine.adb:213:33: medium: range check might fail, in call inlined at
-      --   machine.adb:312 (e.g. when A = 0)
-
+      -- if valid mem value, confirm valid mem address
       if Ret = Success then
-        -- e.m.
           if Regs(Rs) + DataVal(Offs) <= 65535 and Regs(Rs) + DataVal(Offs) >= 0 then
             if Addr(Regs(Rs) + DataVal(Offs)) < Addr'Last and Addr(Regs(Rs) + DataVal(Offs)) > Addr'First then
               A := Addr(Regs(Rs) + DataVal(Offs));
               Regs(Rd) := Memory(A);
             end if;
-          -- end if;
         end if;
       end if;
-
-
    end DoLdr;
 
+   -- confritm that value in Rb + Offset will compute to a valid mem address
    procedure DoStr(Ra : in Reg;
                    Offs : in Offset;
                    Rb : in Reg;
                    Ret : out ReturnCode) is
       A : Addr;
+
    begin
       Ret := Success;
-
-
       if Ret = Success then
-        -- e.m
         if Regs(Ra) + DataVal(Offs) <= 65535 and Regs(Ra) + DataVal(Offs) >= 0 then
           if Addr(Regs(Ra) + DataVal(Offs)) < Addr'Last and Addr(Regs(Ra) + DataVal(Offs)) > Addr'First then
               A := Addr(Regs(Ra) + DataVal(Offs));
@@ -302,35 +263,37 @@ package body Machine with SPARK_Mode => On is
                    Ret : out ReturnCode) is
    begin
       Ret := Success;
-      -- Redundancy to eliminate:
-      -- machine.adb:236:11: warning: unused assignment, in call inlined
-      --   at machine.adb:332
       if Ret = Success then
          Regs(Rd) := DataVal(Offs);
       end if;
    end DoMov;
 
+   -- procedure to indicate whether or not the result of adding the value in
+   -- a register Rs, to a value Offs, will be a valid memory address
    procedure ValidMemAccess(Rs : in Reg;
                             Offs : in Offset;
                            MemAccessAllowed : out Boolean) is
-      -- MinVal : Integer := Integer(DataVal'First);
       MaxVal : Integer := Integer(DataVal'Last);
       MaxOffs : Integer := Integer(Offset'Last);
-      --MinOffs : Integer := Integer(Offset'First);
       Val1 : Integer := Integer(Regs(Rs));
       Val2 : Integer := Integer(Offs);
    begin
       MemAccessAllowed := False;
       if -- If two positive numbers ...
         Val1 > 0 and Val2 > 0 then
-        -- sum to a numeber greater than DataVal/Integer
-        -- ILLEGALPROGRAM
+        -- sum to a numeber greater than DataVal/Integer range
+        -- then return ILLEGALPROGRAM
          if MaxVal - Val1 < Val2 or MaxOffs - Val1 < Val2 then
             MemAccessAllowed := False;
          end if;
       elsif -- If two negative numbers ...
          Val1 <= 0 and Val2 <= 0 then
+           -- sum to a numeber less than DataVal/Integer range
+           -- then return ILLEGALPROGRAM
             MemAccessAllowed := False;
+
+      --if two numbers, of different signs, sum to a number outside the Range
+      -- of DataVal/Integer, then return ILEGALPROGRAM
       elsif val1 < 0 and val2 > 0 then
          if -val2 >= val1 then
            MemAccessAllowed := False;
@@ -342,10 +305,6 @@ package body Machine with SPARK_Mode => On is
       else
          MemAccessAllowed := True;
       end if;
-
-
-
-
    end ValidMemAccess;
 
 
@@ -364,8 +323,6 @@ package body Machine with SPARK_Mode => On is
 
       while (CycleCount < Cycles and Ret = Success) loop
          Inst := Prog(PC);
-
-         -- debug print pc and current instruction
          Put(Integer(PC)); Put(':'); Put(Ada.Characters.Latin_1.HT);
          DebugPrintInstr(Inst);
          New_Line;
@@ -384,7 +341,10 @@ package body Machine with SPARK_Mode => On is
                DoDiv(Inst.DivRd,Inst.DivRs1,Inst.DivRs2,Ret);
                IncPC(Ret,1);
             when LDR =>
+                -- Call function to check whether the inputs will compute to
+                -- a valid memory address
                ValidMemAccess(Inst.LdrRs, Inst.LdrOffs, MemAccessAllowed);
+               -- if they do, perform LDR procedure
                if  MemAccessAllowed then
                   DoLdr(Inst.LdrRd,Inst.LdrRs,Inst.LdrOffs,Ret);
                   IncPC(Ret,1);
@@ -393,7 +353,10 @@ package body Machine with SPARK_Mode => On is
                end if;
 
             when STR =>
+            -- Call function to check whether the inputs will compute to
+            -- a valid memory address
                ValidMemAccess(Inst.StrRa, Inst.StrOffs, MemAccessAllowed);
+              -- if they do, perform STR procedure
                if  MemAccessAllowed then
                   DoStr(Inst.StrRa,Inst.StrOffs,Inst.StrRb,Ret);
                   IncPC(Ret,1);
@@ -423,16 +386,43 @@ package body Machine with SPARK_Mode => On is
          CycleCount := CycleCount + 1;
       end loop;
       if Ret = Success then
-         -- Cycles instructions executed without a RET or invalid behaviour
          Ret := CyclesExhausted;
       end if;
 
    end ExecuteProgram;
 
-   -- A static analysis that goes throught the generated assembley instructions
-   -- line by line and if a value has been placed in a register, if a offset is
-   -- legal and that known register value instructions do not cause over/under
-   -- flow
+   -- ****************** ANALYSIS FUNCTION: Overall Design ******************
+   -- Our analysis function implements a static analysis on the program. It
+   -- keeps track of what registers have known values, what these values are,
+   -- and any values that have been written to memory. This is important,
+   -- because the analysis function must work on any initial state - and this
+   -- initial state is unknown to the analysis function. Therefore, any attempt
+   -- to perform operations on an unknown register (with a few noted exceptions,
+   --  discussed below) must be flagged as invalid behaviour.
+   -- Key data structures of our function include:
+   --   1. ‘RegTracker’: an array that represents all valid registers (i.e.
+   --       regs 0 … 31, inclusive), and tracks any values assigned to there
+   --       registers, and any manipulation on registers with known values.
+   --   2. ‘MemTracker’: an array of all valid memory addresses (e.g. address
+   --       0 … 65535, inclusive), and holds any values that are written to
+   --       memory- which can also be used to check whether a memory address is
+   --       known and can be read from.
+   --   3. ‘RegKnown’: an array that represents all valid registers (i.e. regs
+   --       0 … 31, inclusive), where each register is assigned a boolean value
+   --       indicating whether or its value is known.
+   --   4. ‘Count’: a variable whose type is an integer within the same range as
+   --       ProgramCounter. ‘Count’ keeps track of the number of statements
+   --       executed by the program and is useful for easy incrementation,
+   --       comparison and indexing of Program instructions
+   -- Key features of our analysis include:
+   --   1. The analysis function checks whether a register is known, and if not
+   --      it returns ‘true’ for illegal behaviour. An exception to this, is if
+   --      there is a zero in the equation (because 0 multiplied by any other
+   --      number will equal 0, which is valid.
+   --   2. The analysis function also checks whether or not any array reference
+   --      is out of bounds (for example, the array of Regs or mem addresses).
+
+
    function DetectInvalidBehaviour(Prog : in Program;
                                    Cycles : in Integer) return Boolean
    is
@@ -440,15 +430,15 @@ package body Machine with SPARK_Mode => On is
       -- Integer subtype in the range of ProgramCounter for easy incrementation,
       -- comparison and indexing Program instructions
       subtype InstrCount is Integer range 1..Cycles;
-      Count : Integer := Integer(InstrCount'First); --e.m.
+      Count : Integer := Integer(InstrCount'First);
       Inst : Instr;
       MinVal : Integer := Integer(DataVal'First);
       MaxVal : Integer := Integer(DataVal'Last);
       MaxOffs : Integer := Integer(Offset'Last);
-      -- Array that tracks values MOV'ed into registers adn the manipulation
+      -- Array that tracks values MOV'ed into registers and the manipulation
       -- on these known register values.
       RegTracker : array (Reg) of DataVal := (others => 0);
-
+      -- Array that tracks values assigned to addresses in memory
       MemTracker : array (Addr) of DataVal := (others => 0);
       -- Array that tracks if a register value is known or not, useful if
       -- user inputs 0, or 1 register is unknown and 1 register is known
@@ -460,10 +450,9 @@ package body Machine with SPARK_Mode => On is
 
    begin
 
-
       while(Count < Cycles) loop
 
-        if Count > 0 and Count < 65537 then --e.m.
+        if Count > 0 and Count < 65537 then
          Inst := Prog(ProgramCounter(Count));
 
          -- Pragma Loop_Invariant (Count < Cycles and Count > 0);
@@ -740,7 +729,7 @@ package body Machine with SPARK_Mode => On is
                      end if;
 
                   else
-                    -- e.m
+                    -- check valid mem address
                     if RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs) <= 65535 and RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs) >= 0 then
                       if Addr(RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs)) < Addr'Last and Addr(RegTracker(Inst.LdrRs) + DataVal(Inst.LdrOffs)) > Addr'First then
                           RegTracker(Inst.LdrRd) :=
@@ -800,7 +789,7 @@ package body Machine with SPARK_Mode => On is
 
 
                   else
-                    --e.m.
+                    -- check valid mem address
                     if RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs) <= 65535 and RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs) >= 0 then
                       if Addr(RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs)) < Addr'Last and Addr(RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs)) > Addr'First then
                           MemTracker(Addr(RegTracker(Inst.StrRa) + DataVal(Inst.StrOffs)))
@@ -815,7 +804,7 @@ package body Machine with SPARK_Mode => On is
             when NOP =>
                Count := Count + 1;
             end case;
-        end if; --e.m.
+        end if;
       end loop;
       return True;
    end DetectInvalidBehaviour;
